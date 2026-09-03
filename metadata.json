@@ -1,0 +1,6 @@
+{
+  "name": "ZestCuisine",
+  "description": "Plataforma SaaS comercial de cardápios digitais multi-tenant para restaurantes, hamburguerias e pizzarias, administrada pela WP Internet.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

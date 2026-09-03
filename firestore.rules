@@ -1,0 +1,171 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net: default-deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper Functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isSuperAdmin() {
+      return isSignedIn() && (
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        (request.auth.token.email.lower() == 'welsonpaz@gmail.com' && request.auth.token.email_verified == true)
+      );
+    }
+
+    function getRestaurantAdminData() {
+      return get(/databases/$(database)/documents/restaurant_admins/$(request.auth.uid)).data;
+    }
+
+    function isRestaurantAdmin(restId) {
+      return isSignedIn() && (
+        isSuperAdmin() ||
+        (exists(/databases/$(database)/documents/restaurant_admins/$(request.auth.uid)) &&
+         getRestaurantAdminData().restaurantId == restId)
+      );
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // 1. Super Admins Collection
+    match /admins/{uid} {
+      allow get: if isSignedIn() && (request.auth.uid == uid || isSuperAdmin());
+      allow list: if isSuperAdmin();
+      // Allow bootstrap for the verified master account, otherwise only existing Super Admins
+      allow create, update: if isSuperAdmin() || (
+        isSignedIn() && 
+        request.auth.uid == uid && 
+        request.auth.token.email.lower() == 'welsonpaz@gmail.com' && 
+        request.auth.token.email_verified == true
+      );
+      allow delete: if isSuperAdmin() && request.auth.uid != uid;
+    }
+
+    // 2. Restaurant Admins Mapping Collection
+    match /restaurant_admins/{uid} {
+      allow get: if isSignedIn() && (request.auth.uid == uid || isSuperAdmin());
+      allow list: if isSuperAdmin();
+      // Strictly only Super Admin can assign or edit restaurant admin roles
+      allow write: if isSuperAdmin();
+    }
+
+    // 3. Multi-Tenant Restaurants
+    match /restaurants/{restaurantId} {
+      // Public read for customer menu browsing and restaurant selection
+      allow read: if true;
+
+      // Only Super Admin can create new restaurants
+      allow create: if isSuperAdmin() && isValidId(restaurantId);
+
+      // Only Super Admin can delete restaurants
+      allow delete: if isSuperAdmin() && isValidId(restaurantId);
+
+      // Super Admin can update all fields; Restaurant Admin CANNOT change plan, status, id or createdAt
+      allow update: if isSuperAdmin() || (
+        isRestaurantAdmin(restaurantId) &&
+        !incoming().diff(existing()).affectedKeys().hasAny(['plan', 'status', 'id', 'createdAt'])
+      );
+    }
+
+    // 4. Orders placed by customers
+    match /orders/{orderId} {
+      // Customers can place orders with basic validation
+      allow create: if incoming().restaurantId is string && 
+                       incoming().total is number && 
+                       incoming().total >= 0;
+
+      // Single order lookup by Super Admin or the authorized Restaurant Admin
+      allow get: if isSuperAdmin() || isRestaurantAdmin(resource.data.restaurantId);
+
+      // List orders: Super Admin can list all; Restaurant Admin can query orders
+      allow list: if isSuperAdmin() || (
+        isSignedIn() && 
+        exists(/databases/$(database)/documents/restaurant_admins/$(request.auth.uid))
+      );
+
+      // Update order status: Super Admin or assigned Restaurant Admin
+      allow update: if isSuperAdmin() || isRestaurantAdmin(resource.data.restaurantId);
+
+      // Delete orders: Super Admin only
+      allow delete: if isSuperAdmin();
+    }
+
+    // 5. Menu Items (Scoped to tenant)
+    match /menu_items/{itemId} {
+      // Public read for digital menu display
+      allow read: if true;
+
+      // Creation: Super Admin or authorized Restaurant Admin for incoming restaurantId
+      allow create: if isSuperAdmin() || (
+        incoming().restaurantId is string && 
+        isRestaurantAdmin(incoming().restaurantId)
+      );
+
+      // Update: Super Admin or Restaurant Admin (cannot transfer item to another restaurant)
+      allow update: if isSuperAdmin() || (
+        isRestaurantAdmin(existing().restaurantId) && 
+        incoming().restaurantId == existing().restaurantId
+      );
+
+      // Deletion: Super Admin or Restaurant Admin of that restaurant
+      allow delete: if isSuperAdmin() || isRestaurantAdmin(existing().restaurantId);
+    }
+
+    // 6. Additional Options
+    match /additionals/{addId} {
+      allow read: if true;
+      allow create: if isSuperAdmin() || (
+        incoming().restaurantId is string && 
+        isRestaurantAdmin(incoming().restaurantId)
+      );
+      allow update: if isSuperAdmin() || (
+        isRestaurantAdmin(existing().restaurantId) && 
+        incoming().restaurantId == existing().restaurantId
+      );
+      allow delete: if isSuperAdmin() || isRestaurantAdmin(existing().restaurantId);
+    }
+
+    // 7. Customers collection (PII Protected)
+    match /customers/{phone} {
+      allow create, update: if true;
+      allow get: if true;
+      // Strictly forbid listing full customer database to non-superadmins
+      allow list: if isSuperAdmin();
+    }
+
+    // 8. Settings
+    match /settings/{settingId} {
+      allow read: if true;
+      allow write: if isSuperAdmin();
+    }
+
+    // 9. Coupons
+    match /coupons/{couponId} {
+      allow read: if true;
+      allow create: if isSuperAdmin() || isRestaurantAdmin(incoming().restaurantId);
+      allow update, delete: if isSuperAdmin() || isRestaurantAdmin(existing().restaurantId);
+    }
+
+    // 10. Coupons Metadata
+    match /coupons_meta/{metaId} {
+      allow read: if true;
+      allow write: if isSuperAdmin();
+    }
+  }
+}
