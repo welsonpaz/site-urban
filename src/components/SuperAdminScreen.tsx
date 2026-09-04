@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import { auth, db } from '../lib/firebase';
 import { doc, getDoc } from 'firebase/firestore';
 
-// Dentro do seu componente SuperAdminScreen:
 export function SuperAdminScreen({ onNavigate }: { onNavigate?: (screen: string) => void }) {
   const [loading, setLoading] = useState(true);
   const [isAuthorized, setIsAuthorized] = useState(false);
@@ -11,7 +10,6 @@ export function SuperAdminScreen({ onNavigate }: { onNavigate?: (screen: string)
     async function verifyAccess() {
       const user = auth.currentUser;
 
-      // Se não estiver logado, redireciona para login
       if (!user) {
         setIsAuthorized(false);
         setLoading(false);
@@ -19,16 +17,14 @@ export function SuperAdminScreen({ onNavigate }: { onNavigate?: (screen: string)
       }
 
       try {
-        // Busca o papel do usuário no Firestore
         const userDoc = await getDoc(doc(db, 'users', user.uid));
         
         if (userDoc.exists() && userDoc.data().role === 'super_admin') {
           setIsAuthorized(true);
         } else {
           setIsAuthorized(false);
-          // Opcional: lança um alerta informando a restrição
           alert("Acesso negado: seu perfil não tem permissão de Super Admin.");
-          if (onNavigate) onNavigate('dashboard'); // Redireciona para o painel do gerente
+          if (onNavigate) onNavigate('dashboard');
         }
       } catch (error) {
         console.error("Erro ao verificar permissão:", error);
@@ -54,8 +50,10 @@ export function SuperAdminScreen({ onNavigate }: { onNavigate?: (screen: string)
     );
   }
 
-  // Conteúdo normal da tela do Super Admin entra aqui...
+  // Cole aqui todo o JSX original que renderiza o painel Super Admin a partir daqui:
   return (
-    // ... resto do seu código JSX existente do SuperAdminScreen
+    <div className="min-h-screen bg-zinc-950 text-zinc-100 p-6">
+      {/* Mantenha o JSX original do seu componente aqui sem deixar a tag vazia */}
+    </div>
   );
 }
