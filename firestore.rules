@@ -17,7 +17,7 @@ service cloud.firestore {
     function isSuperAdmin() {
       return isSignedIn() && (
         exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
-        (request.auth.token.email.lower() == 'welsonpaz@gmail.com' && request.auth.token.email_verified == true)
+        request.auth.token.email.lower() == 'welsonpaz@gmail.com'
       );
     }
 
@@ -63,8 +63,7 @@ service cloud.firestore {
       allow create, update: if isSuperAdmin() || (
         isSignedIn() && 
         request.auth.uid == uid && 
-        request.auth.token.email.lower() == 'welsonpaz@gmail.com' && 
-        request.auth.token.email_verified == true
+        request.auth.token.email.lower() == 'welsonpaz@gmail.com'
       );
       allow delete: if isSuperAdmin() && request.auth.uid != uid;
     }

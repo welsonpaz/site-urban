@@ -619,7 +619,7 @@ export default function DashboardScreen({
                 className="text-[11px] text-primary-accent hover:text-white font-bold inline-flex items-center gap-1 transition-colors"
               >
                 <Shield className="w-3.5 h-3.5 text-primary-orange" />
-                Sou Super Admin WP Internet
+                Sou Super Admin WP Integrada
               </button>
             </div>
           )}
@@ -693,7 +693,7 @@ export default function DashboardScreen({
             <button
               onClick={onOpenSuperAdmin}
               className="px-2.5 py-1.5 bg-surface-container-high hover:bg-white/10 border border-white/10 rounded-xl text-primary-accent hover:text-white text-[11px] font-bold flex items-center gap-1 transition-all active:scale-95"
-              title="Painel Central WP Internet"
+              title="Painel Central WP Integrada"
             >
               <Shield className="w-3.5 h-3.5 text-primary-orange" />
               <span className="hidden sm:inline">Super Admin WP</span>

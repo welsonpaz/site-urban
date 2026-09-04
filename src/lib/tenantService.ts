@@ -1,7 +1,7 @@
 import { doc, getDoc, setDoc, getDocs, collection, deleteDoc, query, where } from 'firebase/firestore';
 import { db, handleFirestoreError, cleanData } from './firebase';
 import { Restaurant, MenuItem, AdditionalOption, Order, OrderStatus } from '../types';
-import { DEFAULT_RESTAURANTS, PIZZARIA_ITEMS, DEFAULT_ADDITIONALS } from './defaultRestaurants';
+import { DEFAULT_RESTAURANTS, DEFAULT_ADDITIONALS } from './defaultRestaurants';
 import { MENU_ITEMS } from '../data';
 
 const RESTAURANTS_COLLECTION = 'restaurants';
@@ -69,12 +69,12 @@ export async function initializeTenantsInDB(): Promise<Restaurant[]> {
 
     snap.forEach((docSnap) => {
       const data = docSnap.data() as Restaurant;
-      if (data && data.id) {
+      if (data && data.id && data.id !== 'pizzariateste') {
         loadedList.push(data);
       }
     });
 
-    // Check if Urbano Burguer or Pizzaria Teste are missing
+    // Check if Urbano Burguer is present
     let shouldSyncItems = false;
     for (const defRest of DEFAULT_RESTAURANTS) {
       const exists = loadedList.some((r) => r.id === defRest.id || r.slug === defRest.slug);
@@ -91,13 +91,12 @@ export async function initializeTenantsInDB(): Promise<Restaurant[]> {
       }
     }
 
-    // Seed products for default restaurants if needed
-    if (shouldSyncItems && loadedList.length <= 2) {
+    // Seed products for Urbano Burguer if needed
+    if (shouldSyncItems || loadedList.length === 1) {
       try {
         // Check menu items
         const itemsSnap = await getDocs(collection(db, MENU_ITEMS_COLLECTION));
         const hasUrbanItems = itemsSnap.docs.some((d) => d.data().restaurantId === 'urbanburguer');
-        const hasPizzaItems = itemsSnap.docs.some((d) => d.data().restaurantId === 'pizzariateste');
 
         if (!hasUrbanItems) {
           for (const item of MENU_ITEMS) {
@@ -106,17 +105,6 @@ export async function initializeTenantsInDB(): Promise<Restaurant[]> {
               ...item,
               id: `urban-${item.id}`,
               restaurantId: 'urbanburguer',
-              isActive: true,
-              updatedAt: new Date().toISOString()
-            }));
-          }
-        }
-
-        if (!hasPizzaItems) {
-          for (const item of PIZZARIA_ITEMS) {
-            const docRef = doc(db, MENU_ITEMS_COLLECTION, item.id);
-            await setDoc(docRef, cleanData({
-              ...item,
               isActive: true,
               updatedAt: new Date().toISOString()
             }));
@@ -150,7 +138,7 @@ export async function getAllRestaurants(): Promise<Restaurant[]> {
     const list: Restaurant[] = [];
     snap.forEach((docSnap) => {
       const data = docSnap.data() as Restaurant;
-      if (data && data.id) {
+      if (data && data.id && data.id !== 'pizzariateste') {
         list.push(data);
       }
     });
@@ -168,19 +156,26 @@ export async function getAllRestaurants(): Promise<Restaurant[]> {
 // Get restaurant by ID or Slug
 export async function getRestaurantBySlugOrId(slugOrId: string): Promise<Restaurant | null> {
   const clean = slugOrId.toLowerCase().trim();
+  if (clean === 'pizzariateste') return null;
   try {
     // 1. Direct doc lookup by ID
     const docRef = doc(db, RESTAURANTS_COLLECTION, clean);
     const snap = await getDoc(docRef);
     if (snap.exists()) {
-      return snap.data() as Restaurant;
+      const data = snap.data() as Restaurant;
+      if (data.id !== 'pizzariateste') {
+        return data;
+      }
     }
 
     // 2. Query by slug
     const q = query(collection(db, RESTAURANTS_COLLECTION), where('slug', '==', clean));
     const querySnap = await getDocs(q);
     if (!querySnap.empty) {
-      return querySnap.docs[0].data() as Restaurant;
+      const data = querySnap.docs[0].data() as Restaurant;
+      if (data.id !== 'pizzariateste') {
+        return data;
+      }
     }
 
     // Fallback to local default restaurants if offline / initial
@@ -238,17 +233,11 @@ export async function getMenuItemsByRestaurant(restaurantId: string): Promise<Me
     });
 
     if (list.length === 0) {
-      if (restaurantId === 'pizzariateste') {
-        return PIZZARIA_ITEMS;
-      }
-      if (restaurantId === 'urbanburguer') {
-        return MENU_ITEMS.map(m => ({ ...m, restaurantId: 'urbanburguer' }));
-      }
+      return MENU_ITEMS.map(m => ({ ...m, restaurantId: 'urbanburguer' }));
     }
     return list;
   } catch (err) {
     console.error('Erro ao carregar cardápio do restaurante:', err);
-    if (restaurantId === 'pizzariateste') return PIZZARIA_ITEMS;
     return MENU_ITEMS.map(m => ({ ...m, restaurantId: 'urbanburguer' }));
   }
 }

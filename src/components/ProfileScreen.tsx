@@ -166,7 +166,7 @@ export default function ProfileScreen({ onBack, onChangeScreen, onOpenSuperAdmin
               <span className="flex items-center gap-3 font-bold">
                 <Shield className="w-4 h-4 text-primary-accent" />
                 <span className="flex items-center gap-2">
-                  Super Admin WP Internet (Multi-Tenant)
+                  Super Admin WP Integrada (Multi-Tenant)
                   <span className="text-[8px] bg-primary-accent/10 text-primary-accent px-1.5 py-0.5 rounded border border-primary-accent/20 font-black uppercase tracking-wider">
                     WP Integrada
                   </span>

@@ -120,32 +120,6 @@ export default function MenuScreen({
     <div className="bg-dark-bg min-h-screen text-on-surface font-sans pb-32">
       {/* Main Container */}
       <main className="pt-4 px-5 max-w-xl md:max-w-3xl lg:max-w-5xl xl:max-w-6xl mx-auto space-y-4">
-        {/* Multi-Tenant Demo Switcher (Discreet) */}
-        {allRestaurants && allRestaurants.length > 1 && onSelectRestaurant && (
-          <div className="flex flex-col sm:flex-row items-center justify-between p-2 px-3.5 bg-surface-container-low/90 backdrop-blur-md rounded-2xl border border-white/5 text-xs text-on-surface-variant gap-2 shadow-sm">
-            <div className="flex items-center gap-2 font-bold text-white text-[11px] self-start sm:self-center">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              <span className="text-on-surface-variant">Restaurante Ativo:</span>
-              <span className="text-primary-orange font-extrabold">{activeRestaurant?.name}</span>
-            </div>
-            <div className="flex items-center gap-1.5 overflow-x-auto w-full sm:w-auto">
-              {allRestaurants.map(r => (
-                <button
-                  key={r.id}
-                  onClick={() => onSelectRestaurant(r)}
-                  className={`px-3 py-1 rounded-xl text-[10.5px] font-extrabold transition-all whitespace-nowrap active:scale-95 ${
-                    activeRestaurant?.id === r.id
-                      ? 'bg-gradient-to-r from-primary-orange to-primary-accent text-white shadow-sm shadow-primary-orange/20'
-                      : 'bg-white/5 text-on-surface-variant hover:text-white hover:bg-white/10'
-                  }`}
-                >
-                  {r.name}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
         {/* Brand Hero Banner */}
         <div className="bg-gradient-to-b from-surface-container-high via-surface-container/90 to-surface-container-lowest p-6 rounded-3xl border border-white/10 relative text-center flex flex-col items-center justify-center shadow-2xl shadow-primary-orange/5">
           {/* Glowing backdrops */}

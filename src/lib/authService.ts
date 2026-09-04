@@ -92,7 +92,7 @@ export async function getUserProfile(user: User | null): Promise<AuthProfile | n
         await setDoc(adminDocRef, {
           email: user.email?.toLowerCase().trim() || '',
           role: 'super_admin',
-          name: user.displayName || 'WP Internet Super Admin',
+          name: user.displayName || 'WP Integrada Super Admin',
           updatedAt: new Date().toISOString()
         }, { merge: true });
         adminSnap = await getDoc(adminDocRef);

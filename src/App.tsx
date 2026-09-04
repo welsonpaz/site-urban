@@ -52,8 +52,8 @@ export default function App() {
           const savedSlug = localStorage.getItem('wp_active_restaurant_slug');
           const targetSlug = match ? match[1] : savedSlug;
 
-          let chosen = dbTenants[0];
-          if (targetSlug) {
+          let chosen = dbTenants.find(t => t.id === 'urbanburguer') || dbTenants[0];
+          if (targetSlug && targetSlug !== 'pizzariateste') {
             const found = dbTenants.find(t => t.slug.toLowerCase() === targetSlug.toLowerCase());
             if (found) chosen = found;
           }
@@ -147,7 +147,86 @@ export default function App() {
   // Default Cart state starts empty
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
 
-  const [orders, setOrders] = useState<Order[]>([]);
+  // Orders state with local persistence and initial sample order
+  const [orders, setOrders] = useState<Order[]>(() => {
+    try {
+      const saved = localStorage.getItem('urban_customer_orders');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      }
+    } catch (e) {
+      console.warn('Erro ao ler pedidos locais:', e);
+    }
+    // Default initial sample order for immediate reordering test
+    const chefao = MENU_ITEMS[0];
+    const batata = MENU_ITEMS.find((m) => m.category === 'Batatas Recheadas') || MENU_ITEMS[4] || MENU_ITEMS[1];
+    return [
+      {
+        id: 'UB-7429',
+        restaurantId: 'urbanburguer',
+        restaurantName: 'Urbano Burguer',
+        date: 'Hoje, 19:45',
+        customerName: 'Welson Paz',
+        customerPhone: '(86) 99803-0143',
+        deliveryType: 'delivery',
+        items: [
+          {
+            id: 'sample-cart-1',
+            menuItem: chefao,
+            quantity: 2,
+            selectedSides: [
+              {
+                id: 'add-bacon-urban',
+                restaurantId: 'urbanburguer',
+                name: 'Bacon Artesanal Defumado Extra',
+                price: 6.00,
+                category: 'Hambúrgueres',
+                isActive: true,
+                description: '',
+                imageUrl: '',
+                rating: 5,
+                ratingCount: ''
+              }
+            ],
+            notes: 'Ponto da carne ao ponto para bem passado.'
+          },
+          {
+            id: 'sample-cart-2',
+            menuItem: batata,
+            quantity: 1,
+            selectedSides: [],
+            notes: ''
+          }
+        ],
+        subtotal: 89.00,
+        discount: 0,
+        shipping: 5.00,
+        total: 94.00,
+        status: 'FINALIZADO',
+        address: {
+          street: 'Av. Principal dos Sabores, 1000',
+          details: 'Apto 102',
+          neighborhood: 'Centro',
+          cityState: 'Teresina - PI'
+        },
+        paymentMethod: 'pix',
+        estimatedTime: '25 - 35 min',
+        createdAt: new Date().toISOString()
+      }
+    ];
+  });
+
+  // Save orders to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem('urban_customer_orders', JSON.stringify(orders));
+    } catch (e) {
+      console.warn('Erro ao salvar pedidos locais:', e);
+    }
+  }, [orders]);
 
   // Customer registration states
   const [customerName, setCustomerName] = useState<string>('');
@@ -266,6 +345,36 @@ export default function App() {
 
   const handleAddOrder = (order: Order) => {
     setOrders([...orders, order]);
+  };
+
+  // Reorder functionality: automatically populates the cart with items from the previous order
+  const handleReorder = (order: Order) => {
+    if (!order.items || order.items.length === 0) return;
+
+    // Generate fresh CartItems with unique IDs
+    const reorderedCartItems: CartItem[] = order.items.map((item, index) => ({
+      id: `cart-reorder-${Date.now()}-${index}-${Math.random().toString(36).substring(2, 6)}`,
+      menuItem: { ...item.menuItem },
+      quantity: item.quantity && item.quantity > 0 ? item.quantity : 1,
+      selectedSides: item.selectedSides ? item.selectedSides.map(s => ({ ...s })) : [],
+      notes: item.notes || '',
+    }));
+
+    setCartItems(reorderedCartItems);
+
+    // Restore customer and delivery details if previously filled
+    if (order.address && order.address.street) {
+      setAddress(order.address);
+    }
+    if (order.customerName) {
+      setCustomerName(order.customerName);
+    }
+    if (order.customerPhone) {
+      setCustomerPhone(order.customerPhone);
+    }
+
+    // Direct the user to the cart screen immediately to review and checkout
+    setCurrentScreen('cart');
   };
 
   const handleClearCart = () => {
@@ -444,6 +553,7 @@ export default function App() {
           orders={orders}
           onBack={handleBackToMenu}
           onChangeScreen={setCurrentScreen}
+          onReorder={handleReorder}
         />
       )}
 

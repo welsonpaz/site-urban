@@ -9,8 +9,8 @@ import {
 import { Restaurant, RestaurantPlan, RestaurantStatus } from '../types';
 import { getAllRestaurants, saveRestaurantToDB, deleteRestaurantFromDB, setActiveSlug } from '../lib/tenantService';
 import { 
-  loginWithGoogle, 
   loginWithEmail, 
+  registerWithEmail,
   logoutUser, 
   subscribeToAuthState, 
   AuthProfile, 
@@ -33,8 +33,10 @@ export default function SuperAdminScreen({
   // Auth state
   const [authProfile, setAuthProfile] = useState<AuthProfile | null>(null);
   const [checkingAuth, setCheckingAuth] = useState(true);
-  const [loginEmail, setLoginEmail] = useState('');
+  const [loginEmail, setLoginEmail] = useState('WelsonPaz@gmail.com');
   const [loginPassword, setLoginPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [isRegisterMode, setIsRegisterMode] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
   const [loginLoading, setLoginLoading] = useState(false);
 
@@ -96,32 +98,57 @@ export default function SuperAdminScreen({
     }
   };
 
-  const handleGoogleLogin = async () => {
-    setLoginLoading(true);
-    setLoginError(null);
-    try {
-      await loginWithGoogle();
-    } catch (err: unknown) {
-      console.error(err);
-      setLoginError('Falha ao autenticar com conta Google. Verifique se o pop-up foi autorizado.');
-    } finally {
-      setLoginLoading(false);
-    }
-  };
-
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!loginEmail || !loginPassword) {
-      setLoginError('Preencha seu e-mail administrativo e senha.');
+      setLoginError('Preencha seu e-mail administrativo e a senha de acesso.');
+      return;
+    }
+    if (loginPassword.length < 6) {
+      setLoginError('A senha deve conter no mínimo 6 caracteres.');
       return;
     }
     setLoginLoading(true);
     setLoginError(null);
     try {
-      await loginWithEmail(loginEmail, loginPassword);
-    } catch (err: unknown) {
+      if (isRegisterMode) {
+        await registerWithEmail(loginEmail, loginPassword);
+      } else {
+        try {
+          await loginWithEmail(loginEmail, loginPassword);
+        } catch (signInErr: any) {
+          const cleanEmail = loginEmail.toLowerCase().trim();
+          // If account is not registered yet and matches the master superadmin email, attempt auto-initialization
+          if (
+            (signInErr?.code === 'auth/user-not-found' || signInErr?.code === 'auth/invalid-credential') &&
+            cleanEmail === 'welsonpaz@gmail.com'
+          ) {
+            try {
+              await registerWithEmail(loginEmail, loginPassword);
+              return;
+            } catch (regErr: any) {
+              if (regErr?.code === 'auth/email-already-in-use') {
+                throw new Error('Senha incorreta para a conta Super Admin da WP Integrada.');
+              }
+              throw regErr;
+            }
+          }
+          throw signInErr;
+        }
+      }
+    } catch (err: any) {
       console.error(err);
-      setLoginError('Credenciais incorretas ou conta não encontrada no Firebase Auth.');
+      if (err?.code === 'auth/invalid-credential' || err?.code === 'auth/wrong-password') {
+        setLoginError('Senha incorreta. Se ainda não cadastrou senha, selecione "Cadastrar Senha".');
+      } else if (err?.code === 'auth/user-not-found') {
+        setLoginError('Conta não encontrada. Clique na aba "Cadastrar Senha" para cadastrar seu primeiro acesso.');
+      } else if (err?.code === 'auth/email-already-in-use') {
+        setLoginError('Esta conta já está cadastrada. Use a aba "Entrar com Senha".');
+      } else if (err?.code === 'auth/weak-password') {
+        setLoginError('A senha fornecida é muito fraca. Utilize pelo menos 6 caracteres.');
+      } else {
+        setLoginError(err?.message || 'Erro de autenticação no Firebase. Verifique seus dados.');
+      }
     } finally {
       setLoginLoading(false);
     }
@@ -313,18 +340,21 @@ export default function SuperAdminScreen({
     );
   }
 
-  // 2. Unauthenticated: Show WP Internet Super Admin Login Gate
+  // 2. Unauthenticated: Show WP Integrada Super Admin Login Gate
   if (!authProfile) {
     return (
       <div className="bg-dark-bg min-h-screen text-on-surface flex flex-col justify-center items-center px-4 py-12">
         <div className="w-full max-w-md bg-surface-container-low border border-primary-orange/30 p-6 md:p-8 rounded-3xl shadow-2xl shadow-black/80 space-y-6">
           <div className="text-center space-y-2">
-            <div className="inline-flex p-3 bg-primary-orange/10 border border-primary-orange/20 rounded-2xl text-primary-orange mb-1">
+            <div className="inline-flex p-3.5 bg-primary-orange/10 border border-primary-orange/20 rounded-2xl text-primary-orange mb-1 shadow-inner">
               <Shield className="w-8 h-8" />
             </div>
-            <h1 className="text-xl font-black text-white tracking-tight">WP Internet • Super Admin</h1>
-            <p className="text-xs text-on-surface-variant font-medium">
-              Acesso restrito à infraestrutura multi-tenant de restaurantes. Identifique-se com sua conta corporativa autorizada.
+            <div className="inline-block px-3 py-1 bg-primary-orange/15 border border-primary-orange/30 rounded-full text-[10px] font-black tracking-widest text-primary-orange uppercase">
+              Acesso Exclusivo
+            </div>
+            <h1 className="text-xl font-black text-white tracking-tight">WP Integrada • Super Admin</h1>
+            <p className="text-xs text-on-surface-variant font-medium leading-relaxed">
+              Painel central e multi-tenant restrito exclusivamente aos administradores da <strong>WP Integrada</strong>. Identifique-se com suas credenciais de e-mail e senha.
             </p>
           </div>
 
@@ -335,67 +365,89 @@ export default function SuperAdminScreen({
             </div>
           )}
 
-          {/* Primary Action: Google Sign-In */}
-          <button
-            onClick={handleGoogleLogin}
-            disabled={loginLoading}
-            className="w-full py-3 px-4 bg-white hover:bg-zinc-100 text-zinc-900 font-extrabold text-sm rounded-xl flex items-center justify-center gap-3 shadow-md transition-all active:scale-[0.98] disabled:opacity-50"
-          >
-            <svg className="w-5 h-5" viewBox="0 0 24 24">
-              <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-              <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
-              <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
-            </svg>
-            <span>{loginLoading ? 'Conectando...' : 'Entrar com Conta Google'}</span>
-          </button>
-
-          <div className="relative flex items-center justify-center">
-            <div className="border-t border-white/10 w-full" />
-            <span className="bg-surface-container-low px-3 text-[11px] text-on-surface-variant font-bold uppercase tracking-wider">
-              ou com e-mail e senha
-            </span>
+          {/* Mode Switcher */}
+          <div className="flex bg-surface-container-lowest p-1 rounded-xl border border-white/5 text-xs font-bold">
+            <button
+              type="button"
+              onClick={() => { setIsRegisterMode(false); setLoginError(null); }}
+              className={`flex-1 py-2 rounded-lg transition-all ${!isRegisterMode ? 'bg-primary-orange text-white shadow-sm' : 'text-on-surface-variant hover:text-white'}`}
+            >
+              Entrar com Senha
+            </button>
+            <button
+              type="button"
+              onClick={() => { setIsRegisterMode(true); setLoginError(null); }}
+              className={`flex-1 py-2 rounded-lg transition-all ${isRegisterMode ? 'bg-primary-orange text-white shadow-sm' : 'text-on-surface-variant hover:text-white'}`}
+            >
+              Cadastrar Senha
+            </button>
           </div>
 
-          <form onSubmit={handleEmailLogin} className="space-y-3.5">
+          <form onSubmit={handleEmailLogin} className="space-y-4">
             <div>
-              <label className="text-[11px] font-bold text-on-surface-variant block mb-1">E-mail Administrativo</label>
+              <label className="text-[11px] font-bold text-on-surface-variant block mb-1.5">
+                E-mail Administrativo WP Integrada
+              </label>
               <div className="relative">
-                <Mail className="w-4 h-4 text-on-surface-variant absolute left-3 top-3" />
+                <Mail className="w-4 h-4 text-on-surface-variant absolute left-3.5 top-3.5" />
                 <input
                   type="email"
-                  placeholder="admin@wpinternet.com"
+                  placeholder="admin@wpintegrada.com"
                   value={loginEmail}
                   onChange={e => setLoginEmail(e.target.value)}
-                  className="w-full pl-9 pr-3 py-2.5 bg-surface-container-lowest border border-white/10 rounded-xl text-xs text-white placeholder:text-on-surface-variant/40 focus:border-primary-orange focus:outline-none"
+                  required
+                  className="w-full pl-10 pr-3 py-3 bg-surface-container-lowest border border-white/10 rounded-xl text-xs text-white placeholder:text-on-surface-variant/40 focus:border-primary-orange focus:outline-none transition-colors"
                 />
               </div>
             </div>
 
             <div>
-              <label className="text-[11px] font-bold text-on-surface-variant block mb-1">Senha</label>
+              <label className="text-[11px] font-bold text-on-surface-variant block mb-1.5">
+                {isRegisterMode ? 'Definir Nova Senha de Acesso' : 'Senha de Acesso'}
+              </label>
               <div className="relative">
-                <Lock className="w-4 h-4 text-on-surface-variant absolute left-3 top-3" />
+                <Lock className="w-4 h-4 text-on-surface-variant absolute left-3.5 top-3.5" />
                 <input
-                  type="password"
+                  type={showPassword ? 'text' : 'password'}
                   placeholder="••••••••"
                   value={loginPassword}
                   onChange={e => setLoginPassword(e.target.value)}
-                  className="w-full pl-9 pr-3 py-2.5 bg-surface-container-lowest border border-white/10 rounded-xl text-xs text-white placeholder:text-on-surface-variant/40 focus:border-primary-orange focus:outline-none"
+                  required
+                  className="w-full pl-10 pr-10 py-3 bg-surface-container-lowest border border-white/10 rounded-xl text-xs text-white placeholder:text-on-surface-variant/40 focus:border-primary-orange focus:outline-none transition-colors font-mono"
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3.5 top-3.5 text-on-surface-variant hover:text-white cursor-pointer"
+                  tabIndex={-1}
+                >
+                  <Eye className="w-4 h-4" />
+                </button>
               </div>
+              <span className="text-[10px] text-on-surface-variant/60 block mt-1">
+                Mínimo de 6 caracteres. Autenticação criptografada via Firebase.
+              </span>
             </div>
 
             <button
               type="submit"
               disabled={loginLoading}
-              className="w-full py-3 bg-gradient-to-r from-primary-orange to-primary-accent text-white font-extrabold text-xs rounded-xl shadow-md shadow-primary-orange/20 active:scale-95 transition-transform disabled:opacity-50"
+              className="w-full py-3.5 bg-gradient-to-r from-primary-orange to-primary-accent text-white font-black text-xs rounded-xl shadow-lg shadow-primary-orange/25 active:scale-[0.98] transition-all disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer"
             >
-              {loginLoading ? 'Verificando...' : 'Acessar com Credenciais'}
+              {loginLoading ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  <span>Autenticando...</span>
+                </>
+              ) : isRegisterMode ? (
+                <span>Criar Acesso Super Admin</span>
+              ) : (
+                <span>Entrar no Super Admin WP Integrada</span>
+              )}
             </button>
           </form>
 
-          <div className="pt-2 text-center">
+          <div className="pt-2 text-center border-t border-white/5">
             <button
               onClick={onBack}
               className="text-xs text-on-surface-variant hover:text-white transition-colors"
@@ -419,7 +471,7 @@ export default function SuperAdminScreen({
           <div className="space-y-2">
             <h1 className="text-lg font-black text-white">Acesso Negado: Super Admin</h1>
             <p className="text-xs text-on-surface-variant leading-relaxed">
-              A conta <strong className="text-white">{authProfile.email}</strong> foi autenticada via Firebase, porém não possui privilégios de <strong>Super Admin</strong> da WP Internet.
+              A conta <strong className="text-white">{authProfile.email}</strong> foi autenticada via Firebase, porém não possui privilégios de <strong>Super Admin</strong> da WP Integrada.
             </p>
             <p className="text-[11px] text-on-surface-variant/70">
               O acesso a esta área é protegido por regras de controle de acesso estritas (RBAC).
@@ -461,7 +513,7 @@ export default function SuperAdminScreen({
           <div className="flex flex-col">
             <h1 className="font-extrabold text-sm md:text-base text-white flex items-center gap-2 leading-none">
               <Shield className="w-5 h-5 text-primary-orange" />
-              WP Internet • Painel Super Admin
+              WP Integrada • Painel Super Admin
             </h1>
             <span className="text-[10px] text-primary-accent font-bold mt-0.5 leading-none">
               Autenticado: {authProfile.email} (Super Admin)
@@ -595,7 +647,7 @@ export default function SuperAdminScreen({
                         {isCreating ? 'Cadastrar Novo Restaurante' : `Editar: ${editingRestaurant?.name}`}
                       </h2>
                       <span className="text-[11px] text-on-surface-variant">
-                        Configuração global do estabelecimento no ecossistema WP Internet
+                        Configuração global do estabelecimento no ecossistema WP Integrada
                       </span>
                     </div>
                   </div>
@@ -715,7 +767,7 @@ export default function SuperAdminScreen({
                         className="w-full px-3.5 py-2.5 bg-surface-container-lowest border border-white/10 rounded-xl text-xs text-white focus:border-primary-orange focus:outline-none"
                       />
                       <span className="text-[10px] text-on-surface-variant/60 block mt-1">
-                        Este gerente poderá acessar o painel deste restaurante usando sua conta Google/Firebase.
+                        Este gerente poderá acessar o painel deste restaurante usando suas credenciais no Firebase Auth.
                       </span>
                     </div>
                   </div>
