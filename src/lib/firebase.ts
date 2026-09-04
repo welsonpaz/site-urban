@@ -1,5 +1,5 @@
 import { initializeApp } from "firebase/app";
-import { getAuth } from "firebase/auth";
+import { getAuth, GoogleAuthProvider } from "firebase/auth";
 import { 
   getFirestore, doc, getDoc, setDoc, collection, getDocs 
 } from "firebase/firestore";
@@ -17,9 +17,13 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 
 export const auth = getAuth(app);
+export const googleProvider = new GoogleAuthProvider();
 export const db = getFirestore(app);
 
-// Funções utilitárias exigidas pelo tenantService.ts
+// Tipo OperationType exigido pelo authService
+export type OperationType = 'create' | 'read' | 'update' | 'delete' | 'auth';
+
+// Utilitários exigidos pelos serviços
 export function cleanData<T>(data: T): T {
   if (data === null || data === undefined) return data;
   return JSON.parse(JSON.stringify(data));
