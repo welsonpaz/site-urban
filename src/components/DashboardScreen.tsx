@@ -1,3 +1,4 @@
+import ProductImageUpload from './admin/ProductImageUpload';
 import React, { useState, useEffect } from 'react';
 import { ArrowLeft, Database, Plus, Edit, Trash2, Search, Users, Check, RotateCcw, Sparkles, MapPin, Layers, Utensils, Smartphone, FileText, X, AlertTriangle, Lock, ShieldAlert, Upload, Tag, Percent, Clock, ShoppingBag, Truck, ExternalLink, Shield, LogOut, Mail } from 'lucide-react';
 import { MenuItem, ScreenType, Coupon, Restaurant } from '../types';
