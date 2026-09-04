@@ -1,6 +1,8 @@
 import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
-import { getFirestore, doc, getDoc, setDoc, collection, getDocs } from "firebase/firestore";
+import { 
+  getFirestore, doc, getDoc, setDoc, collection, getDocs, updateDoc, deleteDoc 
+} from "firebase/firestore";
 
 const firebaseConfig = {
   apiKey: "AIzaSyANw6NSWZfm10e6WtAmHzHqU-v-6zTOx-I",
@@ -17,7 +19,7 @@ const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
 
-// Busca perfil de cliente por telefone
+// Funções de Clientes
 export async function getCustomerByPhone(phone: string) {
   try {
     const docRef = doc(db, "customers", phone);
@@ -29,7 +31,6 @@ export async function getCustomerByPhone(phone: string) {
   }
 }
 
-// Salva/Atualiza perfil de cliente
 export async function saveCustomerProfile(phone: string, data: any) {
   try {
     const docRef = doc(db, "customers", phone);
@@ -38,6 +39,51 @@ export async function saveCustomerProfile(phone: string, data: any) {
   } catch (error) {
     console.error("Erro ao salvar perfil do cliente:", error);
     return false;
+  }
+}
+
+// Funções de Restaurante / Configurações
+export async function getRestaurantData() {
+  try {
+    const docRef = doc(db, "settings", "restaurant");
+    const docSnap = await getDoc(docRef);
+    return docSnap.exists() ? docSnap.data() : null;
+  } catch (error) {
+    console.error("Erro ao buscar restaurante:", error);
+    return null;
+  }
+}
+
+export async function updateRestaurantData(data: any) {
+  try {
+    const docRef = doc(db, "settings", "restaurant");
+    await setDoc(docRef, data, { merge: true });
+    return true;
+  } catch (error) {
+    console.error("Erro ao atualizar restaurante:", error);
+    return false;
+  }
+}
+
+// Funções de Produtos / Pedidos
+export async function getProducts() {
+  try {
+    const querySnapshot = await getDocs(collection(db, "products"));
+    return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  } catch (error) {
+    console.error("Erro ao buscar produtos:", error);
+    return [];
+  }
+}
+
+export async function saveOrder(orderData: any) {
+  try {
+    const orderRef = doc(collection(db, "orders"));
+    await setDoc(orderRef, { ...orderData, createdAt: new Date() });
+    return orderRef.id;
+  } catch (error) {
+    console.error("Erro ao salvar pedido:", error);
+    return null;
   }
 }
 
