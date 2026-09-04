@@ -57,3 +57,4 @@ export function SuperAdminScreen({ onNavigate }: { onNavigate?: (screen: string)
     </div>
   );
 }
+export default SuperAdminScreen;
