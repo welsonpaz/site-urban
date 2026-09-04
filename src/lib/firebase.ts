@@ -1,7 +1,7 @@
 import { initializeApp } from "firebase/app";
 import { getAuth, GoogleAuthProvider } from "firebase/auth";
 import { 
-  getFirestore, doc, getDoc, setDoc, collection, getDocs 
+  getFirestore, doc, getDoc, setDoc, collection, getDocs, deleteDoc 
 } from "firebase/firestore";
 
 const firebaseConfig = {
@@ -20,8 +20,23 @@ export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 export const db = getFirestore(app);
 
-// Tipo OperationType exigido pelo authService
+// Tipos e Interfaces
 export type OperationType = 'create' | 'read' | 'update' | 'delete' | 'auth';
+
+export interface CustomerProfile {
+  id?: string;
+  name?: string;
+  phone?: string;
+  email?: string;
+  address?: string;
+  number?: string;
+  neighborhood?: string;
+  complement?: string;
+  city?: string;
+  zipCode?: string;
+  notes?: string;
+  createdAt?: any;
+}
 
 // Utilitários exigidos pelos serviços
 export function cleanData<T>(data: T): T {
@@ -46,6 +61,16 @@ export async function getCustomerByPhone(phone: string) {
   }
 }
 
+export async function getCustomers(): Promise<CustomerProfile[]> {
+  try {
+    const querySnapshot = await getDocs(collection(db, "customers"));
+    return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as CustomerProfile));
+  } catch (error) {
+    console.error("Erro ao buscar clientes:", error);
+    return [];
+  }
+}
+
 export async function saveCustomerProfile(phone: string, data: any) {
   try {
     const docRef = doc(db, "customers", phone);
@@ -53,6 +78,38 @@ export async function saveCustomerProfile(phone: string, data: any) {
     return true;
   } catch (error) {
     console.error("Erro ao salvar perfil do cliente:", error);
+    return false;
+  }
+}
+
+// Funções de Cardápio / Itens
+export async function getMenuItemsFromDB() {
+  try {
+    const querySnapshot = await getDocs(collection(db, "menu_items"));
+    return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  } catch (error) {
+    console.error("Erro ao buscar itens do menu:", error);
+    return [];
+  }
+}
+
+export async function saveMenuItemInDB(item: any) {
+  try {
+    const docRef = doc(collection(db, "menu_items"), item.id ? item.id : undefined);
+    await setDoc(docRef, cleanData(item), { merge: true });
+    return docRef.id;
+  } catch (error) {
+    console.error("Erro ao salvar item do menu:", error);
+    return null;
+  }
+}
+
+export async function deleteMenuItemInDB(id: string) {
+  try {
+    await deleteDoc(doc(db, "menu_items", id));
+    return true;
+  } catch (error) {
+    console.error("Erro ao deletar item do menu:", error);
     return false;
   }
 }
