@@ -1,7 +1,7 @@
 import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { 
-  getFirestore, doc, getDoc, setDoc, collection, getDocs, updateDoc, deleteDoc 
+  getFirestore, doc, getDoc, setDoc, collection, getDocs 
 } from "firebase/firestore";
 
 const firebaseConfig = {
@@ -19,6 +19,17 @@ const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
 
+// Funções utilitárias exigidas pelo tenantService.ts
+export function cleanData<T>(data: T): T {
+  if (data === null || data === undefined) return data;
+  return JSON.parse(JSON.stringify(data));
+}
+
+export function handleFirestoreError(error: any, operation: string) {
+  console.error(`Erro no Firestore durante [${operation}]:`, error);
+  throw error;
+}
+
 // Funções de Clientes
 export async function getCustomerByPhone(phone: string) {
   try {
@@ -34,7 +45,7 @@ export async function getCustomerByPhone(phone: string) {
 export async function saveCustomerProfile(phone: string, data: any) {
   try {
     const docRef = doc(db, "customers", phone);
-    await setDoc(docRef, data, { merge: true });
+    await setDoc(docRef, cleanData(data), { merge: true });
     return true;
   } catch (error) {
     console.error("Erro ao salvar perfil do cliente:", error);
@@ -57,7 +68,7 @@ export async function getRestaurantData() {
 export async function updateRestaurantData(data: any) {
   try {
     const docRef = doc(db, "settings", "restaurant");
-    await setDoc(docRef, data, { merge: true });
+    await setDoc(docRef, cleanData(data), { merge: true });
     return true;
   } catch (error) {
     console.error("Erro ao atualizar restaurante:", error);
@@ -79,7 +90,7 @@ export async function getProducts() {
 export async function saveOrder(orderData: any) {
   try {
     const orderRef = doc(collection(db, "orders"));
-    await setDoc(orderRef, { ...orderData, createdAt: new Date() });
+    await setDoc(orderRef, cleanData({ ...orderData, createdAt: new Date().toISOString() }));
     return orderRef.id;
   } catch (error) {
     console.error("Erro ao salvar pedido:", error);
