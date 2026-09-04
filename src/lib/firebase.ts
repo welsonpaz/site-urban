@@ -5,13 +5,13 @@ import {
 } from "firebase/firestore";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyANw6NSWZfm10e6WtAmHzHqU-v-6zTOx-I",
-  authDomain: "urban-burguer-a9452.firebaseapp.com",
-  projectId: "urban-burguer-a9452",
-  storageBucket: "urban-burguer-a9452.firebasestorage.app",
-  messagingSenderId: "548778960274",
-  appId: "1:548778960274:web:3c76c795f9228a04ca4d4b",
-  measurementId: "G-8T3BMRJWE9"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID
 };
 
 const app = initializeApp(firebaseConfig);
