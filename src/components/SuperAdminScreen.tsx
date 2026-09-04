@@ -1,449 +1,419 @@
-import React, { useEffect, useState } from 'react';
-import { auth, db } from '../lib/firebase';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { signInWithEmailAndPassword } from 'firebase/auth';
+import React, { useState, useEffect } from 'react';
+import { auth, db, getProducts, saveMenuItemInDB, deleteMenuItemInDB, getRestaurantData, updateRestaurantData } from '../lib/firebase';
+import { 
+  signInWithEmailAndPassword, 
+  onAuthStateChanged, 
+  signOut, 
+  User 
+} from 'firebase/auth';
+import { collection, getDocs, addDoc, deleteDoc, doc } from 'firebase/firestore';
+import { Lock, LogOut, Package, Tag, Settings, Image as ImageIcon, Plus, Trash2, Save, AlertCircle } from 'lucide-react';
 
-interface SuperAdminScreenProps {
-  onNavigate?: (screen: string) => void;
-}
-
-interface RestaurantConfig {
-  name: string;
-  logoUrl: string;
-  primaryColor: string;
-  backgroundColor: string;
-  textColor: string;
-  slogan: string;
-}
-
-// Utilitário interno para conversão de arquivo em Base64
-const convertFileToBase64 = (file: File): Promise<string> => {
-  return new Promise((resolve, reject) => {
-    if (file.size > 1.5 * 1024 * 1024) {
-      reject(new Error("A imagem deve ter no máximo 1.5MB."));
-      return;
-    }
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = (error) => reject(error);
-  });
-};
-
-// Componente Reutilizável de Upload de Imagem (Logo / Produtos)
-function ImageUploader({
-  currentImage,
-  onImageSelected,
-  label = "Foto / Logo"
-}: {
-  currentImage: string;
-  onImageSelected: (base64: string) => void;
-  label?: string;
-}) {
-  const [loading, setLoading] = useState(false);
-
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setLoading(true);
-    try {
-      const base64 = await convertFileToBase64(file);
-      onImageSelected(base64);
-    } catch (err: any) {
-      alert(err.message || "Erro ao processar imagem.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="space-y-2">
-      <label className="block text-xs font-medium text-zinc-400">{label}</label>
-      <div className="flex items-center gap-4">
-        <div className="w-16 h-16 rounded-xl bg-zinc-800 border border-zinc-700 overflow-hidden flex items-center justify-center shrink-0">
-          {currentImage ? (
-            <img src={currentImage} alt="Preview" className="w-full h-full object-cover" />
-          ) : (
-            <span className="text-xs text-zinc-500">Sem foto</span>
-          )}
-        </div>
-        <label className="cursor-pointer py-2.5 px-4 bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-semibold rounded-xl border border-zinc-700 transition-colors flex items-center gap-2">
-          {loading ? "Processando..." : "📷 Alterar Imagem"}
-          <input
-            type="file"
-            accept="image/png, image/jpeg, image/webp"
-            className="hidden"
-            onChange={handleFileChange}
-          />
-        </label>
-      </div>
-    </div>
-  );
-}
-
-export function SuperAdminScreen({ onNavigate }: SuperAdminScreenProps) {
-  const [loading, setLoading] = useState(true);
-  const [user, setUser] = useState(auth.currentUser);
-  const [isAuthorized, setIsAuthorized] = useState(false);
-  const [saving, setSaving] = useState(false);
-
-  // Estados de Login Interno
+export const SuperAdminScreen: React.FC = () => {
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState<boolean>(true);
+  
+  // Estados do Login
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loginError, setLoginError] = useState('');
-  const [loggingIn, setLoggingIn] = useState(false);
 
-  // Estado da Configuração de Branding da Loja
-  const [config, setConfig] = useState<RestaurantConfig>({
-    name: 'Urbano Burguer',
-    logoUrl: '',
-    primaryColor: '#f97316',
-    backgroundColor: '#09090b',
-    textColor: '#ffffff',
-    slogan: 'O Verdadeiro Sabor do Fogo'
-  });
+  // Aba ativa do painel ('products' | 'coupons' | 'settings')
+  const [activeTab, setActiveTab] = useState<'products' | 'coupons' | 'settings'>('products');
 
-  const checkPermissionsAndLoad = async (currentUser: typeof auth.currentUser) => {
-    if (!currentUser) {
-      setIsAuthorized(false);
-      setLoading(false);
-      return;
-    }
+  // Estados de Dados do Painel
+  const [logoUrl, setLogoUrl] = useState('');
+  const [siteTitle, setSiteTitle] = useState('');
+  
+  const [products, setProducts] = useState<any[]>([]);
+  const [newProduct, setNewProduct] = useState({ name: '', price: '', category: '', image: '' });
 
-    try {
-      const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
-      if (userDoc.exists() && userDoc.data().role === 'super_admin') {
-        setIsAuthorized(true);
+  const [coupons, setCoupons] = useState<any[]>([]);
+  const [newCoupon, setNewCoupon] = useState({ code: '', discount: '' });
 
-        // Carrega as configurações visuais do cardápio do Firestore
-        const settingsDoc = await getDoc(doc(db, 'settings', 'branding'));
-        if (settingsDoc.exists()) {
-          setConfig(settingsDoc.data() as RestaurantConfig);
-        }
-      } else {
-        setIsAuthorized(false);
-      }
-    } catch (error) {
-      console.error("Erro ao verificar permissão:", error);
-      setIsAuthorized(false);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const [message, setMessage] = useState('');
 
+  // Monitorar estado de autenticação
   useEffect(() => {
-    const unsubscribe = auth.onAuthStateChanged((loggedUser) => {
-      setUser(loggedUser);
-      if (loggedUser) {
-        checkPermissionsAndLoad(loggedUser);
-      } else {
-        setIsAuthorized(false);
-        setLoading(false);
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      setLoading(false);
+      if (currentUser) {
+        loadAdminData();
       }
     });
-
     return () => unsubscribe();
   }, []);
 
+  // Carregar dados usando as funções do firebase.ts
+  const loadAdminData = async () => {
+    try {
+      // Carregar configurações do restaurante
+      const restaurantData = await getRestaurantData();
+      if (restaurantData) {
+        setLogoUrl(restaurantData.logoUrl || '');
+        setSiteTitle(restaurantData.siteTitle || '');
+      }
+
+      // Carregar Produtos/Menu
+      const prods = await getProducts();
+      setProducts(prods);
+
+      // Carregar Cupons
+      const couponsSnap = await getDocs(collection(db, 'coupons'));
+      setCoupons(couponsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    } catch (error) {
+      console.error("Erro ao carregar dados do admin:", error);
+    }
+  };
+
+  // Função de Login
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError('');
-    setLoggingIn(true);
-
     try {
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      await checkPermissionsAndLoad(userCredential.user);
-    } catch (error: any) {
-      console.error("Erro no login:", error);
-      setLoginError("E-mail ou senha incorretos.");
-    } finally {
-      setLoggingIn(false);
+      await signInWithEmailAndPassword(auth, email, password);
+    } catch (err: any) {
+      setLoginError('Falha ao entrar. Verifique seu e-mail e senha.');
     }
   };
 
-  const handleSaveBranding = async () => {
-    setSaving(true);
+  // Função de Logout
+  const handleLogout = async () => {
+    await signOut(auth);
+  };
+
+  // Salvar Configurações Gerais
+  const handleSaveSettings = async () => {
     try {
-      await setDoc(doc(db, 'settings', 'branding'), config, { merge: true });
-      alert("Configurações e imagens salvas com sucesso!");
+      const success = await updateRestaurantData({ logoUrl, siteTitle });
+      if (success) {
+        setMessage('Configurações salvas com sucesso!');
+      } else {
+        setMessage('Erro ao salvar configurações.');
+      }
+      setTimeout(() => setMessage(''), 3000);
     } catch (error) {
-      console.error("Erro ao salvar configurações:", error);
-      alert("Erro ao salvar alterações.");
-    } finally {
-      setSaving(false);
+      setMessage('Erro ao salvar configurações.');
     }
   };
 
-  const handleResetDefault = () => {
-    setConfig({
-      name: 'Urbano Burguer',
-      logoUrl: '',
-      primaryColor: '#f97316',
-      backgroundColor: '#09090b',
-      textColor: '#ffffff',
-      slogan: 'O Verdadeiro Sabor do Fogo'
-    });
+  // Adicionar Produto
+  const handleAddProduct = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newProduct.name || !newProduct.price) return;
+    try {
+      const itemToSave = {
+        name: newProduct.name,
+        price: Number(newProduct.price),
+        category: newProduct.category,
+        image: newProduct.image
+      };
+      
+      const id = await saveMenuItemInDB(itemToSave);
+      if (id) {
+        setProducts([...products, { id, ...itemToSave }]);
+        setNewProduct({ name: '', price: '', category: '', image: '' });
+        setMessage('Produto adicionado!');
+        setTimeout(() => setMessage(''), 3000);
+      }
+    } catch (error) {
+      console.error("Erro ao adicionar produto", error);
+    }
+  };
+
+  // Deletar Produto
+  const handleDeleteProduct = async (id: string) => {
+    try {
+      const success = await deleteMenuItemInDB(id);
+      if (success) {
+        setProducts(products.filter(p => p.id !== id));
+      }
+    } catch (error) {
+      console.error("Erro ao deletar produto", error);
+    }
+  };
+
+  // Adicionar Cupom
+  const handleAddCoupon = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newCoupon.code || !newCoupon.discount) return;
+    try {
+      const docRef = await addDoc(collection(db, 'coupons'), {
+        code: newCoupon.code.toUpperCase(),
+        discount: Number(newCoupon.discount)
+      });
+      setCoupons([...coupons, { id: docRef.id, ...newCoupon }]);
+      setNewCoupon({ code: '', discount: '' });
+      setMessage('Cupom criado!');
+      setTimeout(() => setMessage(''), 3000);
+    } catch (error) {
+      console.error("Erro ao adicionar cupom", error);
+    }
+  };
+
+  // Deletar Cupom
+  const handleDeleteCoupon = async (id: string) => {
+    try {
+      await deleteDoc(doc(db, 'coupons', id));
+      setCoupons(coupons.filter(c => c.id !== id));
+    } catch (error) {
+      console.error("Erro ao deletar cupom", error);
+    }
   };
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-zinc-950 text-white">
-        <div className="w-8 h-8 border-4 border-orange-500 border-t-transparent rounded-full animate-spin mb-4" />
-        <p className="text-sm text-zinc-400">Verificando credenciais...</p>
+      <div className="min-h-screen flex items-center justify-center bg-gray-900 text-white">
+        <p>Carregando painel...</p>
       </div>
     );
   }
 
-  // 1. TELA DE LOGIN PARA NÃO AUTENTICADOS
+  // --- TELA DE LOGIN ---
   if (!user) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-zinc-950 text-white p-4">
-        <div className="max-w-md w-full bg-zinc-900 border border-zinc-800 rounded-2xl p-6 space-y-6 shadow-2xl">
-          <div className="text-center space-y-2">
-            <h2 className="text-2xl font-bold text-white">WP Integrada</h2>
-            <p className="text-xs text-zinc-400">Login exclusivo para Super Administradores</p>
+      <div className="min-h-screen flex items-center justify-center bg-gray-950 px-4">
+        <div className="max-w-md w-full bg-gray-900 border border-gray-800 rounded-xl p-8 shadow-2xl">
+          <div className="text-center mb-8">
+            <div className="inline-flex p-3 bg-indigo-600/10 text-indigo-400 rounded-full mb-4">
+              <Lock className="w-8 h-8" />
+            </div>
+            <h2 className="text-2xl font-bold text-white">Painel Administrativo</h2>
+            <p className="text-gray-400 text-sm mt-1">Faça login para gerenciar o site</p>
           </div>
 
           {loginError && (
-            <div className="bg-red-500/10 border border-red-500/20 text-red-400 text-xs p-3 rounded-lg text-center">
-              {loginError}
+            <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 text-red-400 rounded-lg text-sm flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{loginError}</span>
             </div>
           )}
 
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
-              <label className="block text-xs font-medium text-zinc-400 mb-1">E-mail</label>
-              <input
-                type="email"
-                required
+              <label className="block text-sm font-medium text-gray-300 mb-1">E-mail</label>
+              <input 
+                type="email" 
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="superadmin@wpintegrada.com"
-                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:border-orange-500"
+                required
+                className="w-full px-4 py-2.5 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-indigo-500"
+                placeholder="admin@seusite.com"
               />
             </div>
-
             <div>
-              <label className="block text-xs font-medium text-zinc-400 mb-1">Senha</label>
-              <input
-                type="password"
-                required
+              <label className="block text-sm font-medium text-gray-300 mb-1">Senha</label>
+              <input 
+                type="password" 
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                required
+                className="w-full px-4 py-2.5 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-indigo-500"
                 placeholder="••••••••"
-                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:border-orange-500"
               />
             </div>
-
-            <button
+            <button 
               type="submit"
-              disabled={loggingIn}
-              className="w-full py-2.5 px-4 bg-orange-500 hover:bg-orange-600 text-white font-medium rounded-xl transition-colors text-sm shadow-lg shadow-orange-500/20"
+              className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-medium rounded-lg transition-colors shadow-lg shadow-indigo-600/20"
             >
-              {loggingIn ? 'Autenticando...' : 'Entrar no Painel Global'}
+              Entrar no Painel
             </button>
           </form>
-
-          <button
-            onClick={() => onNavigate ? onNavigate('dashboard') : (window.location.href = '/')}
-            className="w-full text-center text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
-          >
-            ← Voltar para o Painel da Loja
-          </button>
         </div>
       </div>
     );
   }
 
-  // 2. TELA DE BLOQUEIO PARA USUÁRIOS SEM ROLE SUPER_ADMIN
-  if (!isAuthorized) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-zinc-950 text-white p-4">
-        <div className="max-w-md w-full bg-zinc-900 border border-zinc-800 rounded-2xl p-6 text-center space-y-4 shadow-2xl">
-          <div className="w-12 h-12 bg-red-500/10 text-red-500 rounded-full flex items-center justify-center mx-auto text-xl font-bold">
-            ✕
-          </div>
-          <div>
-            <h2 className="text-xl font-bold text-red-500">Acesso Restrito</h2>
-            <p className="text-sm text-zinc-400 mt-1">
-              A conta logada ({user.email}) não possui privilégios de Super Admin.
-            </p>
-          </div>
-          
-          <div className="space-y-2 pt-2">
-            <button
-              onClick={() => auth.signOut()}
-              className="w-full py-2.5 px-4 bg-zinc-800 hover:bg-zinc-700 text-white font-medium rounded-xl transition-colors text-sm"
-            >
-              Sair desta conta para trocar de login
-            </button>
-            <button
-              onClick={() => onNavigate ? onNavigate('dashboard') : (window.location.href = '/')}
-              className="w-full py-2.5 px-4 bg-orange-500 hover:bg-orange-600 text-white font-medium rounded-xl transition-colors text-sm shadow-lg shadow-orange-500/20"
-            >
-              ← Voltar ao Painel da Loja
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // 3. PAINEL SUPER ADMIN COMPLETO COM UPLOAD DE IMAGENS E BRANDING
+  // --- PAINEL ADMINISTRATIVO AUTENTICADO ---
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 p-6 max-w-6xl mx-auto">
-      {/* Cabeçalho */}
-      <div className="flex justify-between items-center mb-8 border-b border-zinc-800 pb-4">
-        <div>
-          <h1 className="text-2xl font-bold text-white">WP Integrada • Painel Super Admin</h1>
-          <p className="text-xs text-zinc-400">
-            Autenticado como: <span className="text-orange-400">{user.email}</span> (Super Admin)
-          </p>
+    <div className="min-h-screen bg-gray-950 text-gray-100 flex flex-col">
+      {/* Header do Painel */}
+      <header className="bg-gray-900 border-b border-gray-800 px-6 py-4 flex justify-between items-center">
+        <div className="flex items-center gap-3">
+          <Settings className="w-6 h-6 text-indigo-500" />
+          <h1 className="text-xl font-bold">Painel de Controle - Urban</h1>
         </div>
-        <div className="flex gap-3">
-          <button
-            onClick={() => onNavigate && onNavigate('dashboard')}
-            className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-sm font-medium rounded-lg text-zinc-300 transition-colors"
+        <div className="flex items-center gap-4">
+          <span className="text-sm text-gray-400 hidden sm:inline">{user.email}</span>
+          <button 
+            onClick={handleLogout}
+            className="flex items-center gap-2 px-3 py-1.5 bg-red-600/10 hover:bg-red-600/20 text-red-400 border border-red-500/20 rounded-lg text-sm transition-colors"
           >
-            Ir para Painel da Loja
-          </button>
-          <button
-            onClick={() => auth.signOut()}
-            className="px-4 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-sm font-medium rounded-lg transition-colors"
-          >
-            Sair
+            <LogOut className="w-4 h-4" />
+            <span>Sair</span>
           </button>
         </div>
-      </div>
+      </header>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Form de Configurações */}
-        <div className="lg:col-span-2 bg-zinc-900 border border-zinc-800 p-6 rounded-2xl space-y-6">
-          <h2 className="text-lg font-semibold text-white border-b border-zinc-800 pb-3">Identidade Visual & Marca</h2>
+      {/* Alerta de Feedback */}
+      {message && (
+        <div className="bg-emerald-600/10 border-b border-emerald-500/20 text-emerald-400 px-6 py-3 text-center text-sm">
+          {message}
+        </div>
+      )}
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-medium text-zinc-400 mb-1">Nome do Estabelecimento</label>
-              <input
-                type="text"
-                value={config.name}
-                onChange={(e) => setConfig({ ...config, name: e.target.value })}
-                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:border-orange-500"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-zinc-400 mb-1">Slogan / Subtítulo</label>
-              <input
-                type="text"
-                value={config.slogan}
-                onChange={(e) => setConfig({ ...config, slogan: e.target.value })}
-                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:border-orange-500"
-              />
-            </div>
-          </div>
+      {/* Conteúdo Principal com Abas */}
+      <div className="flex-1 max-w-7xl w-full mx-auto p-6 grid grid-cols-1 md:grid-cols-4 gap-6">
+        
+        {/* Menu Lateral */}
+        <div className="space-y-2">
+          <button 
+            onClick={() => setActiveTab('products')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg font-medium transition-colors ${activeTab === 'products' ? 'bg-indigo-600 text-white' : 'bg-gray-900 hover:bg-gray-800 text-gray-300'}`}
+          >
+            <Package className="w-5 h-5" />
+            <span>Produtos</span>
+          </button>
+          
+          <button 
+            onClick={() => setActiveTab('coupons')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg font-medium transition-colors ${activeTab === 'coupons' ? 'bg-indigo-600 text-white' : 'bg-gray-900 hover:bg-gray-800 text-gray-300'}`}
+          >
+            <Tag className="w-5 h-5" />
+            <span>Cupons de Desconto</span>
+          </button>
 
-          {/* Componente de Upload de Imagem */}
-          <ImageUploader
-            label="Logomarca da Loja (PNG / JPG)"
-            currentImage={config.logoUrl}
-            onImageSelected={(base64) => setConfig({ ...config, logoUrl: base64 })}
-          />
-
-          {/* Cores */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 border-t border-zinc-800 pt-4">
-            <div>
-              <label className="block text-xs font-medium text-zinc-400 mb-2">Cor Primária</label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="color"
-                  value={config.primaryColor}
-                  onChange={(e) => setConfig({ ...config, primaryColor: e.target.value })}
-                  className="w-10 h-10 rounded cursor-pointer border-0 bg-transparent"
-                />
-                <span className="text-xs text-zinc-300 font-mono">{config.primaryColor}</span>
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-zinc-400 mb-2">Cor de Fundo</label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="color"
-                  value={config.backgroundColor}
-                  onChange={(e) => setConfig({ ...config, backgroundColor: e.target.value })}
-                  className="w-10 h-10 rounded cursor-pointer border-0 bg-transparent"
-                />
-                <span className="text-xs text-zinc-300 font-mono">{config.backgroundColor}</span>
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-zinc-400 mb-2">Cor dos Textos</label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="color"
-                  value={config.textColor}
-                  onChange={(e) => setConfig({ ...config, textColor: e.target.value })}
-                  className="w-10 h-10 rounded cursor-pointer border-0 bg-transparent"
-                />
-                <span className="text-xs text-zinc-300 font-mono">{config.textColor}</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex gap-4 pt-4 border-t border-zinc-800">
-            <button
-              onClick={handleSaveBranding}
-              disabled={saving}
-              className="flex-1 py-3 px-4 bg-orange-500 hover:bg-orange-600 text-white font-semibold rounded-xl transition-colors text-sm shadow-lg shadow-orange-500/20"
-            >
-              {saving ? 'Salvando...' : 'Salvar Branding e Imagens'}
-            </button>
-            <button
-              onClick={handleResetDefault}
-              className="px-4 py-3 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-medium rounded-xl text-sm transition-colors"
-            >
-              Redefinir Padrão
-            </button>
-          </div>
+          <button 
+            onClick={() => setActiveTab('settings')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg font-medium transition-colors ${activeTab === 'settings' ? 'bg-indigo-600 text-white' : 'bg-gray-900 hover:bg-gray-800 text-gray-300'}`}
+          >
+            <ImageIcon className="w-5 h-5" />
+            <span>Logo & Informações</span>
+          </button>
         </div>
 
-        {/* Pré-visualização ao Vivo */}
-        <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-2xl flex flex-col justify-between">
-          <div>
-            <h3 className="text-sm font-semibold text-zinc-400 mb-4 uppercase tracking-wider">Pré-visualização do Cardápio</h3>
-            
-            <div 
-              className="p-6 rounded-xl border border-zinc-700 text-center space-y-3 transition-all"
-              style={{ backgroundColor: config.backgroundColor, color: config.textColor }}
-            >
-              {config.logoUrl ? (
-                <img src={config.logoUrl} alt="Logo" className="w-16 h-16 rounded-full mx-auto object-cover border-2" style={{ borderColor: config.primaryColor }} />
-              ) : (
-                <div className="w-16 h-16 rounded-full mx-auto flex items-center justify-center font-bold text-xl border-2" style={{ borderColor: config.primaryColor, color: config.primaryColor }}>
-                  {config.name.substring(0, 2).toUpperCase()}
-                </div>
-              )}
-              <h4 className="text-xl font-bold">{config.name}</h4>
-              <p className="text-xs opacity-75">{config.slogan}</p>
+        {/* Área de Visualização da Aba Ativa */}
+        <div className="md:col-span-3 space-y-6">
+          
+          {/* ABA DE PRODUTOS */}
+          {activeTab === 'products' && (
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-6 space-y-6">
+              <h2 className="text-xl font-semibold">Gerenciar Produtos</h2>
               
-              <button 
-                className="w-full py-2 rounded-lg text-xs font-bold text-white transition-opacity hover:opacity-90 mt-4"
-                style={{ backgroundColor: config.primaryColor }}
-              >
-                Botão Exemplo
-              </button>
-            </div>
-          </div>
+              <form onSubmit={handleAddProduct} className="grid grid-cols-1 sm:grid-cols-2 gap-4 pb-6 border-b border-gray-800">
+                <input 
+                  type="text" placeholder="Nome do Produto" 
+                  value={newProduct.name} onChange={e => setNewProduct({...newProduct, name: e.target.value})}
+                  required className="px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white"
+                />
+                <input 
+                  type="number" step="0.01" placeholder="Preço (R$)" 
+                  value={newProduct.price} onChange={e => setNewProduct({...newProduct, price: e.target.value})}
+                  required className="px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white"
+                />
+                <input 
+                  type="text" placeholder="Categoria" 
+                  value={newProduct.category} onChange={e => setNewProduct({...newProduct, category: e.target.value})}
+                  className="px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white"
+                />
+                <input 
+                  type="url" placeholder="URL da Imagem" 
+                  value={newProduct.image} onChange={e => setNewProduct({...newProduct, image: e.target.value})}
+                  className="px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white"
+                />
+                <button type="submit" className="sm:col-span-2 py-2.5 bg-indigo-600 hover:bg-indigo-500 font-medium rounded-lg flex items-center justify-center gap-2">
+                  <Plus className="w-4 h-4" /> Adicionar Produto
+                </button>
+              </form>
 
-          <p className="text-xs text-zinc-500 mt-6 text-center">
-            Uploads de imagens e edições são convertidos em tempo real para armazenamento seguro no Firestore.
-          </p>
+              <div className="space-y-3">
+                {products.map(prod => (
+                  <div key={prod.id} className="flex items-center justify-between p-3 bg-gray-800/50 border border-gray-800 rounded-lg">
+                    <div>
+                      <p className="font-medium text-white">{prod.name}</p>
+                      <p className="text-sm text-gray-400">R$ {prod.price} • {prod.category || 'Geral'}</p>
+                    </div>
+                    <button onClick={() => handleDeleteProduct(prod.id)} className="p-2 text-red-400 hover:bg-red-500/10 rounded-lg transition-colors">
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ABA DE CUPONS */}
+          {activeTab === 'coupons' && (
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-6 space-y-6">
+              <h2 className="text-xl font-semibold">Gerenciar Cupons de Desconto</h2>
+              
+              <form onSubmit={handleAddCoupon} className="grid grid-cols-1 sm:grid-cols-2 gap-4 pb-6 border-b border-gray-800">
+                <input 
+                  type="text" placeholder="Código do Cupom (ex: DESCONTO10)" 
+                  value={newCoupon.code} onChange={e => setNewCoupon({...newCoupon, code: e.target.value})}
+                  required className="px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white uppercase"
+                />
+                <input 
+                  type="number" placeholder="Desconto (%)" 
+                  value={newCoupon.discount} onChange={e => setNewCoupon({...newCoupon, discount: e.target.value})}
+                  required className="px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white"
+                />
+                <button type="submit" className="sm:col-span-2 py-2.5 bg-indigo-600 hover:bg-indigo-500 font-medium rounded-lg flex items-center justify-center gap-2">
+                  <Plus className="w-4 h-4" /> Criar Cupom
+                </button>
+              </form>
+
+              <div className="space-y-3">
+                {coupons.map(coupon => (
+                  <div key={coupon.id} className="flex items-center justify-between p-3 bg-gray-800/50 border border-gray-800 rounded-lg">
+                    <div>
+                      <p className="font-bold text-white tracking-wider">{coupon.code}</p>
+                      <p className="text-sm text-gray-400">{coupon.discount}% de desconto</p>
+                    </div>
+                    <button onClick={() => handleDeleteCoupon(coupon.id)} className="p-2 text-red-400 hover:bg-red-500/10 rounded-lg transition-colors">
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ABA DE LOGO & CONFIGURAÇÕES */}
+          {activeTab === 'settings' && (
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-6 space-y-6">
+              <h2 className="text-xl font-semibold">Configurações do Site e Logo</h2>
+              
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-1">Título do Site</label>
+                  <input 
+                    type="text" 
+                    value={siteTitle} onChange={e => setSiteTitle(e.target.value)}
+                    className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white"
+                    placeholder="Urban Store"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-1">URL da Logo do Site</label>
+                  <input 
+                    type="url" 
+                    value={logoUrl} onChange={e => setLogoUrl(e.target.value)}
+                    className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white"
+                    placeholder="https://exemplo.com/logo.png"
+                  />
+                </div>
+
+                {logoUrl && (
+                  <div className="p-4 bg-gray-800/50 rounded-lg flex items-center gap-4">
+                    <span className="text-sm text-gray-400">Prévia da Logo:</span>
+                    <img src={logoUrl} alt="Logo preview" className="h-10 object-contain" onError={(e) => {(e.target as HTMLElement).style.display = 'none';}} />
+                  </div>
+                )}
+
+                <button 
+                  onClick={handleSaveSettings}
+                  className="py-2.5 px-6 bg-indigo-600 hover:bg-indigo-500 font-medium rounded-lg flex items-center gap-2 transition-colors"
+                >
+                  <Save className="w-4 h-4" /> Salvar Alterações
+                </button>
+              </div>
+            </div>
+          )}
+
         </div>
       </div>
     </div>
   );
-}
-
-export default SuperAdminScreen;
+};
