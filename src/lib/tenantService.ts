@@ -287,18 +287,18 @@ export async function deleteMenuItemForRestaurant(itemId: string): Promise<void>
 // ADDITIONALS BY RESTAURANT
 export async function getAdditionalsByRestaurant(restaurantId: string): Promise<AdditionalOption[]> {
   try {
-    const snap = await getDocs(collection(db, ADDITIONALS_COLLECTION));
+    const q = query(collection(db, ADDITIONALS_COLLECTION), where('restaurantId', '==', restaurantId));
+    const snap = await getDocs(q);
     const list: AdditionalOption[] = [];
     snap.forEach((docSnap) => {
       const data = docSnap.data() as AdditionalOption;
-      if (data.restaurantId === restaurantId) {
+      if (data && data.id) {
         list.push(data);
       }
     });
 
     if (list.length === 0) {
-      const defaults = DEFAULT_ADDITIONALS.filter(a => a.restaurantId === restaurantId);
-      return defaults;
+      return DEFAULT_ADDITIONALS.filter(a => a.restaurantId === restaurantId);
     }
     return list;
   } catch (err) {
@@ -331,15 +331,55 @@ export async function deleteAdditionalForRestaurant(id: string): Promise<void> {
   }
 }
 
-// ORDERS PERSISTENCE BY RESTAURANT
+// ORDERS PERSISTENCE BY RESTAURANT WITH VERIFIED TOTALS & RBAC
 export async function saveOrderToDB(order: Order, restaurantId: string): Promise<void> {
   try {
+    if (!restaurantId || typeof restaurantId !== 'string') {
+      throw new Error('ID do restaurante é obrigatório e deve ser válido.');
+    }
+
+    // 1. Calculate verified subtotal from items to prevent client tampering
+    let calculatedSubtotal = 0;
+    if (Array.isArray(order.items)) {
+      for (const item of order.items) {
+        const itemPrice = typeof item.menuItem?.price === 'number' && item.menuItem.price >= 0 ? item.menuItem.price : 0;
+        let sidesPrice = 0;
+        if (Array.isArray(item.selectedSides)) {
+          for (const side of item.selectedSides) {
+            if (typeof side.price === 'number' && side.price >= 0) {
+              sidesPrice += side.price;
+            }
+          }
+        }
+        const qty = typeof item.quantity === 'number' && item.quantity > 0 ? item.quantity : 1;
+        calculatedSubtotal += (itemPrice + sidesPrice) * qty;
+      }
+    }
+    calculatedSubtotal = Number(calculatedSubtotal.toFixed(2));
+
+    const shipping = typeof order.shipping === 'number' && order.shipping >= 0 ? Number(order.shipping.toFixed(2)) : 0;
+    const discount = typeof order.discount === 'number' && order.discount >= 0 ? Number(order.discount.toFixed(2)) : 0;
+    const calculatedTotal = Number(Math.max(0, calculatedSubtotal + shipping - discount).toFixed(2));
+
+    // 2. Build sanitized order payload respecting strict Firestore schema
+    const initialStatus = (order.status === 'Pendente' || (order.status as string) === 'pendente') ? 'Pendente' : 'NOVO';
     const docRef = doc(db, ORDERS_COLLECTION, order.id);
     const payload = cleanData({
       ...order,
       restaurantId,
+      subtotal: calculatedSubtotal,
+      shipping,
+      discount,
+      total: calculatedTotal,
+      status: initialStatus,
       createdAt: order.createdAt || new Date().toISOString()
     });
+
+    // Remove any unauthorized administrative fields
+    delete (payload as Record<string, unknown>).role;
+    delete (payload as Record<string, unknown>).adminNotes;
+    delete (payload as Record<string, unknown>).isVerified;
+
     await setDoc(docRef, payload);
     window.dispatchEvent(new Event('orders-updated'));
   } catch (err) {
@@ -349,13 +389,19 @@ export async function saveOrderToDB(order: Order, restaurantId: string): Promise
 }
 
 export async function getOrdersByRestaurant(restaurantId: string): Promise<Order[]> {
+  if (!restaurantId || typeof restaurantId !== 'string') return [];
   try {
-    const q = query(collection(db, ORDERS_COLLECTION), where('restaurantId', '==', restaurantId));
+    const q = query(
+      collection(db, ORDERS_COLLECTION),
+      where('restaurantId', '==', restaurantId)
+    );
     const snap = await getDocs(q);
     const list: Order[] = [];
     snap.forEach((docSnap) => {
       const data = docSnap.data() as Order;
-      list.push(data);
+      if (data && data.id) {
+        list.push(data);
+      }
     });
     // Sort newest first
     list.sort((a, b) => {
@@ -366,6 +412,29 @@ export async function getOrdersByRestaurant(restaurantId: string): Promise<Order
     return list;
   } catch (err) {
     console.error('Erro ao buscar pedidos do restaurante:', err);
+    return [];
+  }
+}
+
+// Global order listing specifically for Super Admin
+export async function getAllOrdersForSuperAdmin(): Promise<Order[]> {
+  try {
+    const snap = await getDocs(collection(db, ORDERS_COLLECTION));
+    const list: Order[] = [];
+    snap.forEach((docSnap) => {
+      const data = docSnap.data() as Order;
+      if (data && data.id) {
+        list.push(data);
+      }
+    });
+    list.sort((a, b) => {
+      const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return timeB - timeA;
+    });
+    return list;
+  } catch (err) {
+    console.error('Erro ao listar pedidos globais:', err);
     return [];
   }
 }

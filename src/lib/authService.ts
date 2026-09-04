@@ -75,40 +75,32 @@ export async function logoutUser(): Promise<void> {
 }
 
 /**
- * Resolves the authenticated user's role and tenant authorization
+ * Resolves the authenticated user's role and tenant authorization purely based on
+ * Firebase Authentication and Firestore RBAC documents (admins/{uid}, restaurant_admins/{uid}).
  */
 export async function getUserProfile(user: User | null): Promise<AuthProfile | null> {
   if (!user) return null;
 
-  const emailLower = (user.email || '').toLowerCase().trim();
-
-  // 1. Check if user is platform owner / master Super Admin
-  if (emailLower === MASTER_SUPER_ADMIN_EMAIL.toLowerCase()) {
-    try {
-      const adminDocRef = doc(db, 'admins', user.uid);
-      await setDoc(adminDocRef, {
-        email: emailLower,
-        role: 'super_admin',
-        name: user.displayName || 'WP Internet Super Admin',
-        updatedAt: new Date().toISOString()
-      }, { merge: true });
-    } catch (e) {
-      console.warn('Super Admin bootstrap doc sync warning:', e);
-    }
-
-    return {
-      uid: user.uid,
-      email: user.email,
-      displayName: user.displayName || 'Super Admin WP Internet',
-      photoURL: user.photoURL,
-      role: 'super_admin'
-    };
-  }
-
-  // 2. Check if user is registered in Firestore /admins
+  // 1. Check if user is registered in Firestore /admins
   try {
     const adminDocRef = doc(db, 'admins', user.uid);
-    const adminSnap = await getDoc(adminDocRef);
+    let adminSnap = await getDoc(adminDocRef);
+
+    // If doc does not exist, attempt bootstrap sync permitted by Firestore security rules
+    if (!adminSnap.exists()) {
+      try {
+        await setDoc(adminDocRef, {
+          email: user.email?.toLowerCase().trim() || '',
+          role: 'super_admin',
+          name: user.displayName || 'WP Internet Super Admin',
+          updatedAt: new Date().toISOString()
+        }, { merge: true });
+        adminSnap = await getDoc(adminDocRef);
+      } catch {
+        // Ignored if rules disallow creation for non-authorized user
+      }
+    }
+
     if (adminSnap.exists() && adminSnap.data()?.role === 'super_admin') {
       return {
         uid: user.uid,
@@ -122,7 +114,7 @@ export async function getUserProfile(user: User | null): Promise<AuthProfile | n
     console.warn('Error checking admin doc:', err);
   }
 
-  // 3. Check if user is registered in Firestore /restaurant_admins
+  // 2. Check if user is registered in Firestore /restaurant_admins
   try {
     const restAdminDocRef = doc(db, 'restaurant_admins', user.uid);
     const restAdminSnap = await getDoc(restAdminDocRef);
@@ -138,14 +130,14 @@ export async function getUserProfile(user: User | null): Promise<AuthProfile | n
       };
     }
   } catch (err) {
-    console.warn('Error checking restaurant admin doc:', err);
+    console.warn('Error checking restaurant_admin doc:', err);
   }
 
-  // 4. Default consumer/customer role
+  // 3. Default: standard customer
   return {
     uid: user.uid,
     email: user.email,
-    displayName: user.displayName || 'Consumidor',
+    displayName: user.displayName || 'Cliente',
     photoURL: user.photoURL,
     role: 'customer'
   };

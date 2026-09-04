@@ -211,12 +211,12 @@ export default function CheckoutScreen({
         paymentMethod,
         changeFor: (paymentMethod === 'cash' && needChange) ? `Troco para R$ ${changeFor}` : undefined,
         estimatedTime: activeRestaurant?.deliveryEstimatedTime || '25 - 35 min',
-        restaurantId: activeRestaurant?.id || 'rest-1'
+        restaurantId: activeRestaurant?.id || 'urbanburguer'
       };
 
       // Persist to tenant database
       try {
-        await saveOrderToDB(newOrder, activeRestaurant?.id || 'rest-1');
+        await saveOrderToDB(newOrder, activeRestaurant?.id || 'urbanburguer');
       } catch (err) {
         console.error('Failed to persist order to tenant DB:', err);
       }

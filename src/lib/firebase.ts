@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { initializeFirestore, doc, getDoc, setDoc, getDocs, collection, deleteDoc } from 'firebase/firestore';
+import { initializeFirestore, doc, getDoc, setDoc, getDocs, collection, deleteDoc, query, where } from 'firebase/firestore';
 import { getAuth, GoogleAuthProvider } from 'firebase/auth';
 import { MenuItem } from '../types';
 
@@ -115,40 +115,70 @@ export function cleanData<T extends Record<string, any>>(data: T): Record<string
 }
 
 /**
- * Saves or updates a customer profile in Firestore
+ * Saves or updates a customer profile in Firestore with clientToken and restaurantId scoping
  */
-export async function saveCustomerProfile(profile: Omit<CustomerProfile, 'updatedAt'>): Promise<void> {
+export async function saveCustomerProfile(
+  profile: Omit<CustomerProfile, 'updatedAt'>,
+  restaurantId?: string
+): Promise<void> {
   const cleanPhone = normalizePhone(profile.phone);
   if (!cleanPhone || cleanPhone.length < 10) return;
+
+  // Retrieve or generate persistent client secret token for this phone
+  const tokenKey = `urban_cust_token_${cleanPhone}`;
+  let clientToken = localStorage.getItem(tokenKey);
+  if (!clientToken) {
+    clientToken = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `tok_${Date.now()}_${Math.random()}`;
+    localStorage.setItem(tokenKey, clientToken);
+  }
+
+  // Cache customer profile in localStorage for local auto-fill without leaking PII
+  const localProfile = {
+    ...profile,
+    phone: cleanPhone,
+    restaurantId: restaurantId || 'urbanburguer',
+    clientToken,
+    updatedAt: new Date().toISOString()
+  };
+  try {
+    localStorage.setItem('urban_customer_profile', JSON.stringify(localProfile));
+  } catch {
+    // Ignore storage quota errors
+  }
 
   const path = `customers/${cleanPhone}`;
   try {
     const docRef = doc(db, 'customers', cleanPhone);
     const payload = cleanData({
-      ...profile,
-      phone: cleanPhone,
-      updatedAt: new Date().toISOString()
+      ...localProfile,
+      ownerUid: auth.currentUser?.uid || undefined
     });
     await setDoc(docRef, payload, { merge: true });
   } catch (error) {
-    handleFirestoreError(error, OperationType.WRITE, path);
+    console.warn('Sincronização de perfil na nuvem retida:', error);
   }
 }
 
 /**
- * Fetches all registered customer profiles from Firestore (Admin Dashboard database view)
+ * Fetches registered customer profiles from Firestore (Tenant-scoped for managers, global for Super Admin)
  */
-export async function getCustomers(): Promise<CustomerProfile[]> {
+export async function getCustomers(restaurantId?: string): Promise<CustomerProfile[]> {
   const path = 'customers';
   try {
-    const snap = await getDocs(collection(db, path));
+    let snap;
+    if (restaurantId) {
+      const q = query(collection(db, path), where('restaurantId', '==', restaurantId));
+      snap = await getDocs(q);
+    } else {
+      snap = await getDocs(collection(db, path));
+    }
     const list: CustomerProfile[] = [];
     snap.forEach((doc) => {
       list.push(doc.data() as CustomerProfile);
     });
     return list;
   } catch (error) {
-    handleFirestoreError(error, OperationType.LIST, path);
+    console.warn('Acesso a clientes restrito por política de segurança:', error);
     return [];
   }
 }

@@ -5,12 +5,14 @@ import {
 } from 'lucide-react';
 import { Order, OrderStatus, Restaurant } from '../../types';
 import { getOrdersByRestaurant, updateOrderStatusInDB } from '../../lib/tenantService';
+import { AuthProfile } from '../../lib/authService';
 
 interface OrdersManagerTabProps {
   restaurant: Restaurant;
+  authProfile?: AuthProfile | null;
 }
 
-export default function OrdersManagerTab({ restaurant }: OrdersManagerTabProps) {
+export default function OrdersManagerTab({ restaurant, authProfile }: OrdersManagerTabProps) {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<string>('TODOS');
@@ -19,6 +21,18 @@ export default function OrdersManagerTab({ restaurant }: OrdersManagerTabProps) 
   const [updatingId, setUpdatingId] = useState<string | null>(null);
 
   const loadOrders = async () => {
+    // If authProfile is provided, verify tenant authorization before querying
+    if (authProfile) {
+      const isSuperAdmin = authProfile.role === 'super_admin';
+      const isTenantAdmin = authProfile.role === 'restaurant_admin' && 
+        (authProfile.restaurantId === restaurant.id || authProfile.restaurantId === restaurant.slug);
+      if (!isSuperAdmin && !isTenantAdmin) {
+        setOrders([]);
+        setLoading(false);
+        return;
+      }
+    }
+
     setLoading(true);
     try {
       const data = await getOrdersByRestaurant(restaurant.id);

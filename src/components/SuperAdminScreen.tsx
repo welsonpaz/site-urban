@@ -14,8 +14,7 @@ import {
   logoutUser, 
   subscribeToAuthState, 
   AuthProfile, 
-  assignRestaurantAdminRole,
-  MASTER_SUPER_ADMIN_EMAIL
+  assignRestaurantAdminRole
 } from '../lib/authService';
 
 interface SuperAdminScreenProps {

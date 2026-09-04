@@ -258,7 +258,7 @@ export default function DashboardScreen({
   const fetchCustomers = async () => {
     setLoadingCustomers(true);
     try {
-      const data = await getCustomers();
+      const data = await getCustomers(authProfile?.role === 'super_admin' ? undefined : activeRestaurant?.id);
       // Sort by updatedAt descending
       data.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
       setCustomers(data);
@@ -1836,7 +1836,7 @@ export default function DashboardScreen({
 
         {/* TAB: PEDIDOS EM TEMPO REAL */}
         {activeTab === 'orders' && activeRestaurant && (
-          <OrdersManagerTab restaurant={activeRestaurant} />
+          <OrdersManagerTab restaurant={activeRestaurant} authProfile={authProfile} />
         )}
 
         {/* TAB: CATEGORIAS */}

@@ -54,6 +54,27 @@ export default function RegisterScreen({
     const cleanPhone = phoneInput.replace(/\D/g, '');
     // Standard Brazilian numbers have 10 (landline) or 11 (mobile) digits
     if (cleanPhone.length >= 10 && cleanPhone.length <= 11) {
+      // 1. First check local storage cache for instant autofill on user device
+      try {
+        const cached = localStorage.getItem('urban_customer_profile');
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (parsed && parsed.phone === cleanPhone) {
+            setNameInput(parsed.name || '');
+            setCepInput(parsed.cep || '');
+            setStreetInput(parsed.street || '');
+            setDetailsInput(parsed.details || '');
+            setNeighborhoodInput(parsed.neighborhood || '');
+            setCityStateInput(parsed.cityState || 'São Paulo - SP');
+            setDbProfileFound(true);
+            setErrorMsg(null);
+            return;
+          }
+        }
+      } catch {
+        // Ignore cache parse error
+      }
+
       const performLookup = async () => {
         setSearchingPhone(true);
         setErrorMsg(null);
@@ -71,8 +92,8 @@ export default function RegisterScreen({
           } else {
             setDbProfileFound(false);
           }
-        } catch (err) {
-          console.error('Erro na consulta automática do telefone:', err);
+        } catch {
+          // Graceful fallback
         } finally {
           setSearchingPhone(false);
         }

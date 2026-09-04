@@ -51,10 +51,6 @@ export function getCachedCoupons(): Coupon[] {
 
 export async function fetchCouponsFromDB(): Promise<Coupon[]> {
   try {
-    const metaRef = doc(db, 'coupons_meta', 'init');
-    const metaSnap = await getDoc(metaRef);
-    const isInitInLocal = localStorage.getItem('coupons_initialized') === 'true';
-
     const querySnapshot = await getDocs(collection(db, 'coupons'));
     const list: Coupon[] = [];
     querySnapshot.forEach((docSnap) => {
@@ -64,23 +60,13 @@ export async function fetchCouponsFromDB(): Promise<Coupon[]> {
       }
     });
 
-    // Seed default coupons ONLY on first run ever (meta does not exist and local storage is not initialized)
-    if (!metaSnap.exists() && !isInitInLocal && list.length === 0) {
-      for (const coupon of DEFAULT_COUPONS) {
-        const docRef = doc(db, 'coupons', coupon.id);
-        await setDoc(docRef, { ...coupon, updatedAt: new Date().toISOString() });
-      }
-      await setDoc(metaRef, { initialized: true, createdAt: new Date().toISOString() });
+    if (list.length > 0) {
       localStorage.setItem('coupons_initialized', 'true');
-      localStorage.setItem(COUPONS_STORAGE_KEY, JSON.stringify(DEFAULT_COUPONS));
-      return DEFAULT_COUPONS;
+      localStorage.setItem(COUPONS_STORAGE_KEY, JSON.stringify(list));
+      return list;
     }
 
-    // Mark initialized so deletion of all coupons won't cause re-seeding
-    await setDoc(metaRef, { initialized: true }, { merge: true }).catch(() => {});
-    localStorage.setItem('coupons_initialized', 'true');
-    localStorage.setItem(COUPONS_STORAGE_KEY, JSON.stringify(list));
-    return list;
+    return getCachedCoupons();
   } catch (err) {
     console.error('Error loading coupons from DB:', err);
     return getCachedCoupons();
