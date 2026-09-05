@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Settings, Tag, Store, Plus, Trash2, Package, Lock, LogIn } from 'lucide-react';
-import { auth, db, getProducts, saveMenuItemInDB, deleteMenuItemInDB } from '../lib/firebase';
+import { ArrowLeft, Settings, Tag, Store, Plus, Trash2, Package, Lock, LogIn, Upload } from 'lucide-react';
+import { auth, db, storage, getProducts, saveMenuItemInDB, deleteMenuItemInDB } from '../lib/firebase';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { signInWithEmailAndPassword, signOut, onAuthStateChanged, User } from 'firebase/auth';
 import { useCoupons, saveCouponToDB, deleteCouponFromDB, Coupon } from '../lib/couponState';
 
@@ -21,6 +22,8 @@ export default function DashboardScreen({ onBack }: DashboardScreenProps) {
   // Estados da Aba Geral (Produtos)
   const [products, setProducts] = useState<any[]>([]);
   const [newProduct, setNewProduct] = useState({ name: '', price: '', category: '', image: '' });
+  const [productImageFile, setProductImageFile] = useState<File | null>(null);
+  const [uploadingProductImg, setUploadingProductImg] = useState(false);
   const [productMessage, setProductMessage] = useState('');
 
   // Estados da Aba Cupons
@@ -62,22 +65,46 @@ export default function DashboardScreen({ onBack }: DashboardScreenProps) {
     }
   };
 
+  const uploadImageToStorage = async (file: File, folder: string): Promise<string> => {
+    const filename = `${Date.now()}_${file.name}`;
+    const storageRef = ref(storage, `${folder}/${filename}`);
+    const snapshot = await uploadBytes(storageRef, file);
+    const downloadURL = await getDownloadURL(snapshot.ref);
+    return downloadURL;
+  };
+
   // Ações de Produtos
   const handleAddProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newProduct.name || !newProduct.price) return;
-    const item = {
-      name: newProduct.name,
-      price: Number(newProduct.price),
-      category: newProduct.category || 'Geral',
-      image: newProduct.image
-    };
-    const id = await saveMenuItemInDB(item);
-    if (id) {
-      setProducts([...products, { id, ...item }]);
-      setNewProduct({ name: '', price: '', category: '', image: '' });
-      setProductMessage('Produto adicionado com sucesso!');
-      setTimeout(() => setProductMessage(''), 3000);
+
+    setUploadingProductImg(true);
+    try {
+      let imageUrl = newProduct.image;
+      if (productImageFile) {
+        imageUrl = await uploadImageToStorage(productImageFile, 'products');
+      }
+
+      const item = {
+        name: newProduct.name,
+        price: Number(newProduct.price),
+        category: newProduct.category || 'Geral',
+        image: imageUrl
+      };
+
+      const id = await saveMenuItemInDB(item);
+      if (id) {
+        setProducts([...products, { id, ...item }]);
+        setNewProduct({ name: '', price: '', category: '', image: '' });
+        setProductImageFile(null);
+        setProductMessage('Produto adicionado com sucesso!');
+        setTimeout(() => setProductMessage(''), 3000);
+      }
+    } catch (error) {
+      console.error('Erro ao adicionar produto:', error);
+      setProductMessage('Erro ao enviar imagem.');
+    } finally {
+      setUploadingProductImg(false);
     }
   };
 
@@ -122,7 +149,6 @@ export default function DashboardScreen({ onBack }: DashboardScreenProps) {
     return <div className="p-8 text-center text-gray-400">Verificando credenciais...</div>;
   }
 
-  // Tela de Login se não estiver autenticado
   if (!currentUser) {
     return (
       <div className="max-w-md mx-auto mt-12 p-8 bg-gray-900 border border-gray-800 rounded-2xl shadow-2xl text-gray-100 space-y-6">
@@ -173,7 +199,6 @@ export default function DashboardScreen({ onBack }: DashboardScreenProps) {
 
   return (
     <div className="max-w-6xl mx-auto p-6 space-y-6 text-gray-100">
-      {/* Cabeçalho */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-gray-800 pb-4">
         <div className="flex items-center gap-3">
           <button onClick={onBack} className="p-2.5 bg-gray-900 border border-gray-800 hover:bg-gray-800 rounded-xl transition-colors text-gray-300" title="Voltar">
@@ -203,15 +228,13 @@ export default function DashboardScreen({ onBack }: DashboardScreenProps) {
         </div>
       </div>
 
-      {/* Conteúdo das Abas */}
       <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 shadow-xl space-y-6">
         
-        {/* ABA 1: GERAL (CADASTRO E GESTÃO DE PRODUTOS) */}
         {activeTab === 'config' && (
           <div className="space-y-6">
             <div>
               <h2 className="text-lg font-semibold text-white">Gerenciamento do Cardápio</h2>
-              <p className="text-sm text-gray-400">Adicione novos itens ou remova produtos existentes do cardápio.</p>
+              <p className="text-sm text-gray-400">Adicione novos itens ao cardápio fazendo upload de arquivos de imagem.</p>
             </div>
 
             {productMessage && (
@@ -245,15 +268,26 @@ export default function DashboardScreen({ onBack }: DashboardScreenProps) {
                 onChange={e => setNewProduct({...newProduct, category: e.target.value})}
                 className="px-4 py-2.5 bg-gray-900 border border-gray-700 rounded-xl text-white text-sm focus:outline-none focus:border-indigo-500"
               />
-              <input 
-                type="url" 
-                placeholder="URL da Imagem do Produto" 
-                value={newProduct.image} 
-                onChange={e => setNewProduct({...newProduct, image: e.target.value})}
-                className="px-4 py-2.5 bg-gray-900 border border-gray-700 rounded-xl text-white text-sm focus:outline-none focus:border-indigo-500"
-              />
-              <button type="submit" className="sm:col-span-2 py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-medium rounded-xl text-sm transition-colors flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/20">
-                <Plus className="w-4 h-4" /> Cadastrar Produto no Cardápio
+              <div className="flex flex-col justify-center">
+                <label className="block text-xs font-medium text-gray-400 mb-1">Foto do Produto (Arquivo)</label>
+                <input 
+                  type="file" 
+                  accept="image/*"
+                  onChange={e => {
+                    if (e.target.files && e.target.files[0]) {
+                      setProductImageFile(e.target.files[0]);
+                    }
+                  }}
+                  className="text-xs text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-gray-800 file:text-indigo-400 hover:file:bg-gray-700"
+                />
+              </div>
+              <button 
+                type="submit" 
+                disabled={uploadingProductImg}
+                className="sm:col-span-2 py-3 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-medium rounded-xl text-sm transition-colors flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/20"
+              >
+                {uploadingProductImg ? <Upload className="w-4 h-4 animate-bounce" /> : <Plus className="w-4 h-4" />}
+                {uploadingProductImg ? 'Enviando imagem...' : 'Cadastrar Produto com Upload'}
               </button>
             </form>
 
@@ -281,7 +315,6 @@ export default function DashboardScreen({ onBack }: DashboardScreenProps) {
           </div>
         )}
 
-        {/* ABA 2: CUPONS */}
         {activeTab === 'coupons' && (
           <div className="space-y-6">
             <div>
