@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Settings, Tag, Store, Plus, Trash2, Package } from 'lucide-react';
-import { db, getProducts, saveMenuItemInDB, deleteMenuItemInDB } from '../lib/firebase';
+import { ArrowLeft, Settings, Tag, Store, Plus, Trash2, Package, Lock, LogIn } from 'lucide-react';
+import { auth, db, getProducts, saveMenuItemInDB, deleteMenuItemInDB } from '../lib/firebase';
+import { signInWithEmailAndPassword, signOut, onAuthStateChanged, User } from 'firebase/auth';
 import { useCoupons, saveCouponToDB, deleteCouponFromDB, Coupon } from '../lib/couponState';
 
 interface DashboardScreenProps {
@@ -9,6 +10,13 @@ interface DashboardScreenProps {
 
 export default function DashboardScreen({ onBack }: DashboardScreenProps) {
   const [activeTab, setActiveTab] = useState<'config' | 'coupons'>('config');
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [loadingAuth, setLoadingAuth] = useState(true);
+
+  // Estados de Login
+  const [emailInput, setEmailInput] = useState('');
+  const [passwordInput, setPasswordInput] = useState('');
+  const [authError, setAuthError] = useState('');
 
   // Estados da Aba Geral (Produtos)
   const [products, setProducts] = useState<any[]>([]);
@@ -21,12 +29,37 @@ export default function DashboardScreen({ onBack }: DashboardScreenProps) {
   const [couponMessage, setCouponMessage] = useState('');
 
   useEffect(() => {
-    loadProductsData();
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setCurrentUser(user);
+      setLoadingAuth(false);
+      if (user) {
+        loadProductsData();
+      }
+    });
+    return () => unsubscribe();
   }, []);
 
   const loadProductsData = async () => {
     const prods = await getProducts();
     setProducts(prods);
+  };
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError('');
+    try {
+      await signInWithEmailAndPassword(auth, emailInput, passwordInput);
+    } catch (error: any) {
+      setAuthError('E-mail ou senha incorretos no Firebase Auth.');
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+    } catch (error) {
+      console.error('Erro ao sair:', error);
+    }
   };
 
   // Ações de Produtos
@@ -85,6 +118,59 @@ export default function DashboardScreen({ onBack }: DashboardScreenProps) {
     }
   };
 
+  if (loadingAuth) {
+    return <div className="p-8 text-center text-gray-400">Verificando credenciais...</div>;
+  }
+
+  // Tela de Login se não estiver autenticado
+  if (!currentUser) {
+    return (
+      <div className="max-w-md mx-auto mt-12 p-8 bg-gray-900 border border-gray-800 rounded-2xl shadow-2xl text-gray-100 space-y-6">
+        <div className="flex justify-between items-center">
+          <button onClick={onBack} className="p-2 bg-gray-800 hover:bg-gray-700 rounded-xl text-gray-300 transition-colors" title="Voltar">
+            <ArrowLeft className="w-5 h-5" />
+          </button>
+          <Lock className="w-8 h-8 text-indigo-400 mx-auto" />
+          <div className="w-9" />
+        </div>
+        <div className="text-center space-y-2">
+          <h2 className="text-xl font-bold text-white">Painel Admin</h2>
+          <p className="text-xs text-gray-400">Faça login com sua conta do Firebase para gerenciar o painel.</p>
+        </div>
+        {authError && (
+          <div className="p-3 bg-red-500/10 border border-red-500/20 text-red-400 text-xs rounded-xl text-center">
+            {authError}
+          </div>
+        )}
+        <form onSubmit={handleLogin} className="space-y-4">
+          <div>
+            <label className="block text-xs font-medium text-gray-400 mb-1">E-mail</label>
+            <input 
+              type="email" 
+              value={emailInput}
+              onChange={(e) => setEmailInput(e.target.value)}
+              required
+              className="w-full px-4 py-2.5 bg-gray-800 border border-gray-700 rounded-xl text-white text-sm focus:outline-none focus:border-indigo-500"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-400 mb-1">Senha</label>
+            <input 
+              type="password" 
+              value={passwordInput}
+              onChange={(e) => setPasswordInput(e.target.value)}
+              required
+              className="w-full px-4 py-2.5 bg-gray-800 border border-gray-700 rounded-xl text-white text-sm focus:outline-none focus:border-indigo-500"
+            />
+          </div>
+          <button type="submit" className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-medium rounded-xl text-sm transition-colors flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/20">
+            <LogIn className="w-4 h-4" /> Entrar no Painel Admin
+          </button>
+        </form>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-6xl mx-auto p-6 space-y-6 text-gray-100">
       {/* Cabeçalho */}
@@ -97,16 +183,22 @@ export default function DashboardScreen({ onBack }: DashboardScreenProps) {
             <h1 className="text-2xl font-bold text-white flex items-center gap-2">
               <Settings className="w-6 h-6 text-indigo-500" /> Painel Admin
             </h1>
-            <p className="text-sm text-gray-400">Gerencie o cardápio e cupons do estabelecimento.</p>
+            <p className="text-sm text-gray-400">Logado como: <span className="text-indigo-400">{currentUser.email}</span></p>
           </div>
         </div>
 
-        <div className="flex bg-gray-900 p-1.5 rounded-xl border border-gray-800">
-          <button onClick={() => setActiveTab('config')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${activeTab === 'config' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-400 hover:text-white'}`}>
-            <Store className="w-4 h-4" /> Geral (Produtos)
-          </button>
-          <button onClick={() => setActiveTab('coupons')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${activeTab === 'coupons' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-400 hover:text-white'}`}>
-            <Tag className="w-4 h-4" /> Cupons
+        <div className="flex items-center gap-3">
+          <div className="flex bg-gray-900 p-1.5 rounded-xl border border-gray-800">
+            <button onClick={() => setActiveTab('config')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${activeTab === 'config' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-400 hover:text-white'}`}>
+              <Store className="w-4 h-4" /> Geral (Produtos)
+            </button>
+            <button onClick={() => setActiveTab('coupons')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${activeTab === 'coupons' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-400 hover:text-white'}`}>
+              <Tag className="w-4 h-4" /> Cupons
+            </button>
+          </div>
+
+          <button onClick={handleLogout} className="px-4 py-2.5 bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 rounded-xl text-sm font-medium transition-colors">
+            Sair
           </button>
         </div>
       </div>
