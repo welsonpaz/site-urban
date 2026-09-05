@@ -1,179 +1,282 @@
-import { 
-  signInWithPopup, 
-  signInWithEmailAndPassword, 
-  createUserWithEmailAndPassword, 
-  signOut, 
-  onAuthStateChanged, 
-  User 
+import {
+  signInWithEmailAndPassword,
+  signOut,
+  onAuthStateChanged,
+  User,
 } from 'firebase/auth';
-import { doc, getDoc, setDoc, getDocs, collection, deleteDoc } from 'firebase/firestore';
-import { auth, googleProvider, db, handleFirestoreError, OperationType } from './firebase';
 
-export type UserRole = 'super_admin' | 'restaurant_admin' | 'customer';
+import {
+  doc,
+  getDoc,
+  setDoc,
+} from 'firebase/firestore';
 
-export interface AuthProfile {
+import {
+  auth,
+  db,
+  handleFirestoreError,
+  OperationType,
+} from './firebase';
+
+/**
+ * Perfil do usuário armazenado no Firestore.
+ *
+ * O Firebase Authentication controla:
+ * - e-mail
+ * - senha
+ * - UID
+ * - estado da conta
+ *
+ * O Firestore pode controlar:
+ * - nome
+ * - função
+ * - estabelecimento
+ * - permissões adicionais
+ */
+export interface UserProfile {
   uid: string;
-  email: string | null;
-  displayName: string | null;
-  photoURL: string | null;
-  role: UserRole;
-  restaurantId?: string; // Set when role === 'restaurant_admin'
+  email: string;
+  name?: string;
+  role?: string;
+  establishmentId?: string;
+  active?: boolean;
+  createdAt?: unknown;
+  updatedAt?: unknown;
 }
 
-// Fixed platform owner email allowed to bootstrap
-export const MASTER_SUPER_ADMIN_EMAIL = 'welsonpaz@gmail.com';
+/**
+ * Resultado completo do login.
+ */
+export interface AuthResult {
+  user: User;
+  profile: UserProfile | null;
+}
 
 /**
- * Login with Google popup (standard Firebase Auth)
+ * Login exclusivamente com e-mail e senha.
+ *
+ * Não existe cadastro público.
  */
-export async function loginWithGoogle(): Promise<User> {
+export async function login(
+  email: string,
+  password: string
+): Promise<AuthResult> {
+  const normalizedEmail = email.trim().toLowerCase();
+
+  if (!normalizedEmail) {
+    throw new Error('Informe o e-mail.');
+  }
+
+  if (!password) {
+    throw new Error('Informe a senha.');
+  }
+
   try {
-    const result = await signInWithPopup(auth, googleProvider);
-    return result.user;
-  } catch (error) {
-    console.error('Google Sign-In failed:', error);
-    throw error;
+    const credential = await signInWithEmailAndPassword(
+      auth,
+      normalizedEmail,
+      password
+    );
+
+    const user = credential.user;
+
+    const profile = await getUserProfile(user.uid);
+
+    return {
+      user,
+      profile,
+    };
+  } catch (error: any) {
+    console.error('Erro ao realizar login:', error);
+
+    switch (error?.code) {
+      case 'auth/invalid-credential':
+        throw new Error('E-mail ou senha inválidos.');
+
+      case 'auth/user-not-found':
+        throw new Error('E-mail ou senha inválidos.');
+
+      case 'auth/wrong-password':
+        throw new Error('E-mail ou senha inválidos.');
+
+      case 'auth/invalid-email':
+        throw new Error('O e-mail informado é inválido.');
+
+      case 'auth/user-disabled':
+        throw new Error('Esta conta está desativada.');
+
+      case 'auth/too-many-requests':
+        throw new Error(
+          'Muitas tentativas de login. Aguarde alguns minutos e tente novamente.'
+        );
+
+      case 'auth/network-request-failed':
+        throw new Error(
+          'Não foi possível conectar ao Firebase. Verifique sua internet.'
+        );
+
+      default:
+        throw error;
+    }
   }
 }
 
 /**
- * Login with email and password
+ * Faz logout do usuário atual.
  */
-export async function loginWithEmail(email: string, pass: string): Promise<User> {
-  try {
-    const result = await signInWithEmailAndPassword(auth, email.trim(), pass);
-    return result.user;
-  } catch (error) {
-    console.error('Email Sign-In failed:', error);
-    throw error;
-  }
-}
-
-/**
- * Register a new user with email and password
- */
-export async function registerWithEmail(email: string, pass: string): Promise<User> {
-  try {
-    const result = await createUserWithEmailAndPassword(auth, email.trim(), pass);
-    return result.user;
-  } catch (error) {
-    console.error('Email Registration failed:', error);
-    throw error;
-  }
-}
-
-/**
- * Logout
- */
-export async function logoutUser(): Promise<void> {
+export async function logout(): Promise<void> {
   try {
     await signOut(auth);
   } catch (error) {
-    console.error('Sign-Out failed:', error);
-    throw error;
+    console.error('Erro ao realizar logout:', error);
+
+    handleFirestoreError(
+      error,
+      OperationType.UPDATE,
+      'authentication/logout'
+    );
   }
 }
 
 /**
- * Resolves the authenticated user's role and tenant authorization purely based on
- * Firebase Authentication and Firestore RBAC documents (admins/{uid}, restaurant_admins/{uid}).
+ * Retorna o usuário atualmente autenticado.
  */
-export async function getUserProfile(user: User | null): Promise<AuthProfile | null> {
-  if (!user) return null;
+export function getCurrentUser(): User | null {
+  return auth.currentUser;
+}
 
-  // 1. Check if user is registered in Firestore /admins
+/**
+ * Observa alterações no estado de autenticação.
+ */
+export function onAuthChange(
+  callback: (user: User | null) => void
+) {
+  return onAuthStateChanged(auth, callback);
+}
+
+/**
+ * Busca o perfil do usuário no Firestore.
+ */
+export async function getUserProfile(
+  uid: string
+): Promise<UserProfile | null> {
+  const path = `users/${uid}`;
+
   try {
-    const adminDocRef = doc(db, 'admins', user.uid);
-    let adminSnap = await getDoc(adminDocRef);
+    const userRef = doc(db, 'users', uid);
+    const snapshot = await getDoc(userRef);
 
-    // If doc does not exist, attempt bootstrap sync permitted by Firestore security rules
-    if (!adminSnap.exists()) {
-      try {
-        await setDoc(adminDocRef, {
-          email: user.email?.toLowerCase().trim() || '',
-          role: 'super_admin',
-          name: user.displayName || 'WP Integrada Super Admin',
-          updatedAt: new Date().toISOString()
-        }, { merge: true });
-        adminSnap = await getDoc(adminDocRef);
-      } catch {
-        // Ignored if rules disallow creation for non-authorized user
+    if (!snapshot.exists()) {
+      return null;
+    }
+
+    return {
+      uid,
+      ...(snapshot.data() as Omit<UserProfile, 'uid'>),
+    };
+  } catch (error) {
+    handleFirestoreError(
+      error,
+      OperationType.READ,
+      path
+    );
+  }
+}
+
+/**
+ * Cria/atualiza somente o perfil do usuário no Firestore.
+ *
+ * ATENÇÃO:
+ * Esta função NÃO cria uma conta no Firebase Authentication.
+ *
+ * A conta de autenticação deve existir previamente no
+ * Firebase Authentication.
+ */
+export async function saveUserProfile(
+  uid: string,
+  profile: Partial<UserProfile>
+): Promise<void> {
+  const path = `users/${uid}`;
+
+  try {
+    const userRef = doc(db, 'users', uid);
+
+    await setDoc(
+      userRef,
+      {
+        ...profile,
+        uid,
+        updatedAt: new Date(),
+      },
+      {
+        merge: true,
       }
-    }
+    );
+  } catch (error) {
+    handleFirestoreError(
+      error,
+      OperationType.UPDATE,
+      path
+    );
+  }
+}
 
-    if (adminSnap.exists() && adminSnap.data()?.role === 'super_admin') {
-      return {
-        uid: user.uid,
-        email: user.email,
-        displayName: user.displayName || adminSnap.data()?.name || 'Super Admin',
-        photoURL: user.photoURL,
-        role: 'super_admin'
-      };
-    }
-  } catch (err) {
-    console.warn('Error checking admin doc:', err);
+/**
+ * Verifica se existe usuário autenticado.
+ */
+export function isAuthenticated(): boolean {
+  return auth.currentUser !== null;
+}
+
+/**
+ * Retorna o UID do usuário atual.
+ */
+export function getCurrentUserId(): string | null {
+  return auth.currentUser?.uid ?? null;
+}
+
+/**
+ * Retorna o e-mail do usuário atual.
+ */
+export function getCurrentUserEmail(): string | null {
+  return auth.currentUser?.email ?? null;
+}
+
+/**
+ * Verifica o papel/função do usuário.
+ */
+export async function getCurrentUserRole(): Promise<string | null> {
+  const user = auth.currentUser;
+
+  if (!user) {
+    return null;
   }
 
-  // 2. Check if user is registered in Firestore /restaurant_admins
-  try {
-    const restAdminDocRef = doc(db, 'restaurant_admins', user.uid);
-    const restAdminSnap = await getDoc(restAdminDocRef);
-    if (restAdminSnap.exists() && restAdminSnap.data()?.role === 'restaurant_admin') {
-      const data = restAdminSnap.data();
-      return {
-        uid: user.uid,
-        email: user.email,
-        displayName: user.displayName || 'Gerente do Restaurante',
-        photoURL: user.photoURL,
-        role: 'restaurant_admin',
-        restaurantId: data?.restaurantId
-      };
-    }
-  } catch (err) {
-    console.warn('Error checking restaurant_admin doc:', err);
-  }
+  const profile = await getUserProfile(user.uid);
 
-  // 3. Default: standard customer
-  return {
-    uid: user.uid,
-    email: user.email,
-    displayName: user.displayName || 'Cliente',
-    photoURL: user.photoURL,
-    role: 'customer'
-  };
+  return profile?.role ?? null;
 }
 
 /**
- * Assigns a user as manager for a restaurant (callable by Super Admin only)
+ * Verifica se o usuário possui uma determinada função.
  */
-export async function assignRestaurantAdminRole(uid: string, email: string, restaurantId: string): Promise<void> {
-  const docRef = doc(db, 'restaurant_admins', uid);
-  await setDoc(docRef, {
-    email: email.toLowerCase().trim(),
-    role: 'restaurant_admin',
-    restaurantId,
-    updatedAt: new Date().toISOString()
-  });
+export async function hasRole(
+  role: string
+): Promise<boolean> {
+  const currentRole = await getCurrentUserRole();
+
+  return currentRole === role;
 }
 
 /**
- * Revokes restaurant admin role (callable by Super Admin only)
+ * Verifica se o usuário é administrador.
  */
-export async function revokeRestaurantAdminRole(uid: string): Promise<void> {
-  const docRef = doc(db, 'restaurant_admins', uid);
-  await deleteDoc(docRef);
-}
+export async function isAdmin(): Promise<boolean> {
+  const role = await getCurrentUserRole();
 
-/**
- * Subscribe to Firebase Auth state changes
- */
-export function subscribeToAuthState(callback: (profile: AuthProfile | null, user: User | null) => void) {
-  return onAuthStateChanged(auth, async (user) => {
-    if (!user) {
-      callback(null, null);
-      return;
-    }
-    const profile = await getUserProfile(user);
-    callback(profile, user);
-  });
+  return (
+    role === 'admin' ||
+    role === 'super_admin' ||
+    role === 'restaurant_admin'
+  );
 }
