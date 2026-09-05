@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ArrowLeft, ShieldAlert, Settings, Tag, Palette, Store, Lock, LogIn } from 'lucide-react';
-import { auth, loginWithEmail, logoutUser } from '../lib/firebase';
-import { onAuthStateChanged, User } from 'firebase/auth';
+import { auth } from '../lib/firebase';
+import { signInWithEmailAndPassword, signOut, onAuthStateChanged, User } from 'firebase/auth';
 
 interface SuperAdminScreenProps {
   onBack: () => void;
@@ -12,7 +12,6 @@ export default function SuperAdminScreen({ onBack }: SuperAdminScreenProps) {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [loadingAuth, setLoadingAuth] = useState(true);
   
-  // Estados para o formulário de login caso não esteja autenticado
   const [emailInput, setEmailInput] = useState('gerente@restaurante.com');
   const [passwordInput, setPasswordInput] = useState('');
   const [authError, setAuthError] = useState('');
@@ -31,9 +30,17 @@ export default function SuperAdminScreen({ onBack }: SuperAdminScreenProps) {
     e.preventDefault();
     setAuthError('');
     try {
-      await loginWithEmail(emailInput, passwordInput);
+      await signInWithEmailAndPassword(auth, emailInput, passwordInput);
     } catch (error: any) {
       setAuthError('Credenciais inválidas no Firebase Auth.');
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+    } catch (error) {
+      console.error('Erro ao sair:', error);
     }
   };
 
@@ -41,7 +48,7 @@ export default function SuperAdminScreen({ onBack }: SuperAdminScreenProps) {
     return <div className="p-8 text-center text-gray-400">Verificando credenciais de acesso...</div>;
   }
 
-  // 1. Se não estiver logado, exibe a tela de login exclusiva do Super Admin
+  // 1. Tela de Login Exclusiva do Super Admin
   if (!currentUser) {
     return (
       <div className="max-w-md mx-auto mt-12 p-8 bg-gray-900 border border-gray-800 rounded-2xl shadow-2xl text-gray-100 space-y-6">
@@ -54,12 +61,12 @@ export default function SuperAdminScreen({ onBack }: SuperAdminScreenProps) {
             <ArrowLeft className="w-5 h-5" />
           </button>
           <Lock className="w-8 h-8 text-indigo-400 mx-auto" />
-          <div className="w-9" /> {/* Espaçador para centralizar o ícone */}
+          <div className="w-9" />
         </div>
 
         <div className="text-center space-y-2">
           <h2 className="text-xl font-bold text-white">Painel Super Admin</h2>
-          <p className="text-xs text-gray-400">Identifique-se com a conta de gerência para continuar.</p>
+          <p className="text-xs text-gray-400">Área administrativa restrita protegida por Firebase Authentication.</p>
         </div>
 
         {authError && (
@@ -70,7 +77,7 @@ export default function SuperAdminScreen({ onBack }: SuperAdminScreenProps) {
 
         <form onSubmit={handleLogin} className="space-y-4">
           <div>
-            <label className="block text-xs font-medium text-gray-400 mb-1">E-mail de Gestão</label>
+            <label className="block text-xs font-medium text-gray-400 mb-1">E-mail</label>
             <input 
               type="email" 
               value={emailInput}
@@ -94,25 +101,25 @@ export default function SuperAdminScreen({ onBack }: SuperAdminScreenProps) {
             type="submit"
             className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-medium rounded-xl text-sm transition-colors flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/20"
           >
-            <LogIn className="w-4 h-4" /> Acessar Super Admin
+            <LogIn className="w-4 h-4" /> Acessar Painel
           </button>
         </form>
       </div>
     );
   }
 
-  // 2. Se estiver logado, mas o e-mail não for o autorizado, bloqueia o acesso
+  // 2. Bloqueio caso o e-mail logado não seja o autorizado
   if (currentUser.email !== ALLOWED_ADMIN_EMAIL) {
     return (
       <div className="max-w-md mx-auto mt-16 p-8 bg-gray-900 border border-gray-800 rounded-2xl shadow-2xl text-center text-gray-100 space-y-4">
         <ShieldAlert className="w-12 h-12 text-red-400 mx-auto" />
         <h2 className="text-xl font-bold text-white">Acesso Restrito</h2>
         <p className="text-sm text-gray-400">
-          A conta <span className="text-indigo-400">{currentUser.email}</span> não tem permissão de Super Admin.
+          A conta <span className="text-indigo-400">{currentUser.email}</span> não possui permissão de Super Admin.
         </p>
         <div className="flex gap-3 pt-2">
           <button 
-            onClick={() => logoutUser()}
+            onClick={handleLogout}
             className="flex-1 py-2.5 bg-gray-800 hover:bg-gray-700 text-white rounded-xl text-sm font-medium transition-colors"
           >
             Trocar Conta
@@ -128,7 +135,7 @@ export default function SuperAdminScreen({ onBack }: SuperAdminScreenProps) {
     );
   }
 
-  // 3. Painel Completo de Super Admin (Autenticado e Autorizado) com as cores corretas do cardápio
+  // 3. Painel Completo do Super Admin
   return (
     <div className="max-w-6xl mx-auto p-6 space-y-6 text-gray-100">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-gray-800 pb-4">
@@ -149,7 +156,6 @@ export default function SuperAdminScreen({ onBack }: SuperAdminScreenProps) {
         </div>
 
         <div className="flex items-center gap-3">
-          {/* Abas de Navegação Interna */}
           <div className="flex bg-gray-900 p-1.5 rounded-xl border border-gray-800">
             <button 
               onClick={() => setActiveTab('config')}
@@ -172,7 +178,7 @@ export default function SuperAdminScreen({ onBack }: SuperAdminScreenProps) {
           </div>
 
           <button 
-            onClick={() => logoutUser()}
+            onClick={handleLogout}
             className="px-4 py-2.5 bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 rounded-xl text-sm font-medium transition-colors"
           >
             Sair
@@ -184,21 +190,21 @@ export default function SuperAdminScreen({ onBack }: SuperAdminScreenProps) {
         {activeTab === 'config' && (
           <div className="space-y-4">
             <h2 className="text-lg font-semibold text-white">Configurações Gerais da Plataforma</h2>
-            <p className="text-sm text-gray-400">Controle o status de abertura e os parâmetros de funcionamento.</p>
+            <p className="text-sm text-gray-400">Controle os parâmetros globais e o status do sistema.</p>
           </div>
         )}
 
         {activeTab === 'coupons' && (
           <div className="space-y-4">
             <h2 className="text-lg font-semibold text-white">Gerenciamento de Cupons de Desconto</h2>
-            <p className="text-sm text-gray-400">Adicione e remova cupons ativos para os clientes.</p>
+            <p className="text-sm text-gray-400">Adicione e remova cupons ativos.</p>
           </div>
         )}
 
         {activeTab === 'branding' && (
           <div className="space-y-4">
-            <h2 className="text-lg font-semibold text-white">Identidade Visual</h2>
-            <p className="text-sm text-gray-400">Altere o logotipo e o nome do estabelecimento exibidos no topo.</p>
+            <h2 className="text-lg font-semibold text-white">Identidade Visual e Logo</h2>
+            <p className="text-sm text-gray-400">Atualize o logotipo e o título do estabelecimento.</p>
           </div>
         )}
       </div>
