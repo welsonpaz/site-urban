@@ -19,23 +19,40 @@ export const auth = getAuth(app);
 export const db = getFirestore(app);
 export const storage = getStorage(app);
 
+// Utilitários auxiliares exigidos por serviços do projeto
+export function cleanData(data: any) {
+  if (!data) return data;
+  const cleaned = { ...data };
+  Object.keys(cleaned).forEach(key => {
+    if (cleaned[key] === undefined) {
+      delete cleaned[key];
+    }
+  });
+  return cleaned;
+}
+
+export function handleFirestoreError(error: any, customMessage: string = 'Erro no Firestore') {
+  console.error(`${customMessage}:`, error);
+  return null;
+}
+
 // Funções utilitárias de Produtos
 export async function getProducts() {
   try {
     const querySnapshot = await getDocs(collection(db, 'products'));
     return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
   } catch (error) {
-    console.error('Erro ao buscar produtos:', error);
+    handleFirestoreError(error, 'Erro ao buscar produtos');
     return [];
   }
 }
 
 export async function saveMenuItemInDB(item: any) {
   try {
-    const docRef = await addDoc(collection(db, 'products'), item);
+    const docRef = await addDoc(collection(db, 'products'), cleanData(item));
     return docRef.id;
   } catch (error) {
-    console.error('Erro ao salvar produto:', error);
+    handleFirestoreError(error, 'Erro ao salvar produto');
     return null;
   }
 }
@@ -45,12 +62,12 @@ export async function deleteMenuItemInDB(id: string) {
     await deleteDoc(doc(db, 'products', id));
     return true;
   } catch (error) {
-    console.error('Erro ao excluir produto:', error);
+    handleFirestoreError(error, 'Erro ao excluir produto');
     return false;
   }
 }
 
-// Funções utilitárias de Clientes (necessárias para o RegisterScreen)
+// Funções utilitárias de Clientes
 export async function getCustomerByPhone(phone: string) {
   try {
     const q = query(collection(db, 'customers'), where('phone', '==', phone));
@@ -61,19 +78,18 @@ export async function getCustomerByPhone(phone: string) {
     }
     return null;
   } catch (error) {
-    console.error('Erro ao buscar cliente por telefone:', error);
+    handleFirestoreError(error, 'Erro ao buscar cliente por telefone');
     return null;
   }
 }
 
 export async function saveCustomerProfile(phone: string, profileData: any) {
   try {
-    // Usamos o telefone como ID do documento ou salvamos com ID gerado
     const customerRef = doc(db, 'customers', phone.replace(/\D/g, ''));
-    await setDoc(customerRef, { ...profileData, updatedAt: new Date() }, { merge: true });
+    await setDoc(customerRef, cleanData({ ...profileData, updatedAt: new Date() }), { merge: true });
     return true;
   } catch (error) {
-    console.error('Erro ao salvar perfil do cliente:', error);
+    handleFirestoreError(error, 'Erro ao salvar perfil do cliente');
     return false;
   }
 }
