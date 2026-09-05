@@ -41,11 +41,8 @@ export default function SuperAdminScreen() {
       let finalLogoUrl = logoUrl;
 
       if (logoFile) {
-        console.log('Iniciando upload da imagem...');
         const storageRef = ref(storage, `logos/restaurant_logo_${Date.now()}_${logoFile.name}`);
-        const snapshot = await uploadBytes(storageRef, logoFile);
-        console.log('Upload concluído com sucesso!', snapshot);
-        
+        await uploadBytes(storageRef, logoFile);
         finalLogoUrl = await getDownloadURL(storageRef);
         setLogoUrl(finalLogoUrl);
         setLogoFile(null);
@@ -62,61 +59,64 @@ export default function SuperAdminScreen() {
 
       alert('Configurações salvas com sucesso!');
     } catch (error: any) {
-      console.error('Erro detalhado no upload/salvamento:', error);
-      alert(`Falha ao enviar imagem ou salvar dados: ${error.message || 'Erro desconhecido'}`);
+      console.error('Erro ao salvar:', error);
+      alert('Erro ao salvar as configurações.');
     } finally {
       setSaving(false);
     }
   };
 
   if (loading) {
-    return <div className="p-6 text-white text-center">Carregando configurações...</div>;
+    return <div className="p-6 text-white text-center">Carregando...</div>;
   }
 
   return (
     <div className="p-6 max-w-4xl mx-auto text-white">
-      <h1 className="text-2xl font-bold mb-6">Painel Super Admin - Configurações do Sistema</h1>
+      <h1 className="text-2xl font-bold mb-6">Painel Super Admin</h1>
       
       <form onSubmit={handleSaveSettings} className="bg-slate-800 p-6 rounded-xl space-y-6 shadow-lg border border-slate-700">
         
+        {/* Nome */}
         <div>
           <label className="block text-sm font-medium mb-2">Nome do Estabelecimento</label>
           <input
             type="text"
             value={restaurantName}
             onChange={(e) => setRestaurantName(e.target.value)}
-            placeholder="Ex: Urban Burguer"
             className="w-full p-3 bg-slate-900 border border-slate-700 rounded-lg focus:outline-none focus:border-indigo-500"
           />
         </div>
 
+        {/* Endereço (Novo campo adicionado) */}
         <div>
-          <label className="block text-sm font-medium mb-2">Endereço Completo</label>
+          <label className="block text-sm font-medium mb-2">Endereço</label>
           <input
             type="text"
             value={address}
             onChange={(e) => setAddress(e.target.value)}
-            placeholder="Ex: Av. Dom Severino, 1234 - Teresina/PI"
+            placeholder="Ex: Rua Exemplo, 123"
             className="w-full p-3 bg-slate-900 border border-slate-700 rounded-lg focus:outline-none focus:border-indigo-500"
           />
         </div>
 
+        {/* Horário de Funcionamento (Novo campo adicionado) */}
         <div>
           <label className="block text-sm font-medium mb-2">Horário de Funcionamento</label>
           <input
             type="text"
             value={openingHours}
             onChange={(e) => setOpeningHours(e.target.value)}
-            placeholder="Ex: Terça a Domingo das 18:00 às 23:30"
+            placeholder="Ex: Seg a Sex das 18h às 23h"
             className="w-full p-3 bg-slate-900 border border-slate-700 rounded-lg focus:outline-none focus:border-indigo-500"
           />
         </div>
 
+        {/* Logo */}
         <div>
-          <label className="block text-sm font-medium mb-2">Logotipo do Estabelecimento</label>
+          <label className="block text-sm font-medium mb-2">Logo</label>
           {logoUrl && (
             <div className="mb-3">
-              <img src={logoUrl} alt="Logo atual" className="h-16 w-16 object-cover rounded-lg border border-slate-600" />
+              <img src={logoUrl} alt="Logo" className="h-16 w-16 object-cover rounded-lg border border-slate-600" />
             </div>
           )}
           <input
@@ -127,7 +127,7 @@ export default function SuperAdminScreen() {
                 setLogoFile(e.target.files[0]);
               }
             }}
-            className="w-full p-2 bg-slate-900 border border-slate-700 rounded-lg text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-indigo-600 file:text-white hover:file:bg-indigo-700"
+            className="w-full p-2 bg-slate-900 border border-slate-700 rounded-lg text-sm text-slate-400"
           />
         </div>
 
@@ -136,7 +136,7 @@ export default function SuperAdminScreen() {
           disabled={saving}
           className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 font-semibold rounded-lg transition duration-200 disabled:opacity-50"
         >
-          {saving ? 'Salvando alterações...' : 'Salvar Alterações'}
+          {saving ? 'Salvando...' : 'Salvar Alterações'}
         </button>
 
       </form>
