@@ -1,10 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { db, storage } from './firebase'; // Ajuste o caminho do import conforme necessário se estiver em outra pasta
+import { db, storage } from '../lib/firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 export function SuperAdminScreen() {
-  // Estados dos dados do Restaurante/Loja
   const [restaurantName, setRestaurantName] = useState('');
   const [address, setAddress] = useState('');
   const [openingHours, setOpeningHours] = useState('');
@@ -13,7 +12,6 @@ export function SuperAdminScreen() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  // Carregar dados atuais do Firestore ao abrir o painel
   useEffect(() => {
     async function fetchSettings() {
       try {
@@ -36,22 +34,23 @@ export function SuperAdminScreen() {
     fetchSettings();
   }, []);
 
-  // Função para salvar as alterações
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
     try {
       let finalLogoUrl = logoUrl;
 
-      // Se houver um novo arquivo de logo selecionado, faz o upload para o Firebase Storage
       if (logoFile) {
-        const storageRef = ref(storage, `logos/restaurant_logo_${Date.now()}`);
-        await uploadBytes(storageRef, logoFile);
+        console.log('Iniciando upload da imagem...');
+        const storageRef = ref(storage, `logos/restaurant_logo_${Date.now()}_${logoFile.name}`);
+        const snapshot = await uploadBytes(storageRef, logoFile);
+        console.log('Upload concluído com sucesso!', snapshot);
+        
         finalLogoUrl = await getDownloadURL(storageRef);
         setLogoUrl(finalLogoUrl);
+        setLogoFile(null);
       }
 
-      // Salva ou atualiza os dados no Firestore na coleção 'settings' / documento 'general'
       const docRef = doc(db, 'settings', 'general');
       await setDoc(docRef, {
         restaurantName,
@@ -61,10 +60,10 @@ export function SuperAdminScreen() {
         updatedAt: new Date()
       }, { merge: true });
 
-      alert('Configurações, horário e endereço atualizados com sucesso!');
-    } catch (error) {
-      console.error('Erro ao salvar configurações:', error);
-      alert('Erro ao salvar as configurações.');
+      alert('Configurações salvas com sucesso!');
+    } catch (error: any) {
+      console.error('Erro detalhado no upload/salvamento:', error);
+      alert(`Falha ao enviar imagem ou salvar dados: ${error.message || 'Erro desconhecido'}`);
     } finally {
       setSaving(false);
     }
@@ -80,7 +79,6 @@ export function SuperAdminScreen() {
       
       <form onSubmit={handleSaveSettings} className="bg-slate-800 p-6 rounded-xl space-y-6 shadow-lg border border-slate-700">
         
-        {/* Nome do Restaurante */}
         <div>
           <label className="block text-sm font-medium mb-2">Nome do Estabelecimento</label>
           <input
@@ -92,7 +90,6 @@ export function SuperAdminScreen() {
           />
         </div>
 
-        {/* Endereço */}
         <div>
           <label className="block text-sm font-medium mb-2">Endereço Completo</label>
           <input
@@ -104,7 +101,6 @@ export function SuperAdminScreen() {
           />
         </div>
 
-        {/* Horário de Funcionamento */}
         <div>
           <label className="block text-sm font-medium mb-2">Horário de Funcionamento</label>
           <input
@@ -116,7 +112,6 @@ export function SuperAdminScreen() {
           />
         </div>
 
-        {/* Upload de Logo */}
         <div>
           <label className="block text-sm font-medium mb-2">Logotipo do Estabelecimento</label>
           {logoUrl && (
@@ -136,7 +131,6 @@ export function SuperAdminScreen() {
           />
         </div>
 
-        {/* Botão de Salvar */}
         <button
           type="submit"
           disabled={saving}
