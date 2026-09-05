@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, ShieldAlert, Settings, Tag, Palette, Store, Lock, LogIn } from 'lucide-react';
+import { ArrowLeft, Settings, Tag, Palette, Store, Lock, LogIn } from 'lucide-react';
 import { auth } from '../lib/firebase';
 import { signInWithEmailAndPassword, signOut, onAuthStateChanged, User } from 'firebase/auth';
 
@@ -12,11 +12,9 @@ export default function SuperAdminScreen({ onBack }: SuperAdminScreenProps) {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [loadingAuth, setLoadingAuth] = useState(true);
   
-  const [emailInput, setEmailInput] = useState('gerente@restaurante.com');
+  const [emailInput, setEmailInput] = useState('');
   const [passwordInput, setPasswordInput] = useState('');
   const [authError, setAuthError] = useState('');
-
-  const ALLOWED_ADMIN_EMAIL = 'gerente@restaurante.com';
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
@@ -32,7 +30,7 @@ export default function SuperAdminScreen({ onBack }: SuperAdminScreenProps) {
     try {
       await signInWithEmailAndPassword(auth, emailInput, passwordInput);
     } catch (error: any) {
-      setAuthError('Credenciais inválidas no Firebase Auth.');
+      setAuthError('E-mail ou senha incorretos no Firebase Auth.');
     }
   };
 
@@ -45,10 +43,10 @@ export default function SuperAdminScreen({ onBack }: SuperAdminScreenProps) {
   };
 
   if (loadingAuth) {
-    return <div className="p-8 text-center text-gray-400">Verificando credenciais de acesso...</div>;
+    return <div className="p-8 text-center text-gray-400">Verificando credenciais...</div>;
   }
 
-  // 1. Tela de Login Exclusiva do Super Admin
+  // Se não estiver logado, exibe a tela de login integrada com o Firebase Auth
   if (!currentUser) {
     return (
       <div className="max-w-md mx-auto mt-12 p-8 bg-gray-900 border border-gray-800 rounded-2xl shadow-2xl text-gray-100 space-y-6">
@@ -66,7 +64,7 @@ export default function SuperAdminScreen({ onBack }: SuperAdminScreenProps) {
 
         <div className="text-center space-y-2">
           <h2 className="text-xl font-bold text-white">Painel Super Admin</h2>
-          <p className="text-xs text-gray-400">Área administrativa restrita protegida por Firebase Authentication.</p>
+          <p className="text-xs text-gray-400">Autentique-se com uma conta cadastrada no Firebase.</p>
         </div>
 
         {authError && (
@@ -82,6 +80,7 @@ export default function SuperAdminScreen({ onBack }: SuperAdminScreenProps) {
               type="email" 
               value={emailInput}
               onChange={(e) => setEmailInput(e.target.value)}
+              placeholder="ex: welsonpaz@gmail.com"
               required
               className="w-full px-4 py-2.5 bg-gray-800 border border-gray-700 rounded-xl text-white text-sm focus:outline-none focus:border-indigo-500"
             />
@@ -101,41 +100,14 @@ export default function SuperAdminScreen({ onBack }: SuperAdminScreenProps) {
             type="submit"
             className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-medium rounded-xl text-sm transition-colors flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/20"
           >
-            <LogIn className="w-4 h-4" /> Acessar Painel
+            <LogIn className="w-4 h-4" /> Entrar no Painel
           </button>
         </form>
       </div>
     );
   }
 
-  // 2. Bloqueio caso o e-mail logado não seja o autorizado
-  if (currentUser.email !== ALLOWED_ADMIN_EMAIL) {
-    return (
-      <div className="max-w-md mx-auto mt-16 p-8 bg-gray-900 border border-gray-800 rounded-2xl shadow-2xl text-center text-gray-100 space-y-4">
-        <ShieldAlert className="w-12 h-12 text-red-400 mx-auto" />
-        <h2 className="text-xl font-bold text-white">Acesso Restrito</h2>
-        <p className="text-sm text-gray-400">
-          A conta <span className="text-indigo-400">{currentUser.email}</span> não possui permissão de Super Admin.
-        </p>
-        <div className="flex gap-3 pt-2">
-          <button 
-            onClick={handleLogout}
-            className="flex-1 py-2.5 bg-gray-800 hover:bg-gray-700 text-white rounded-xl text-sm font-medium transition-colors"
-          >
-            Trocar Conta
-          </button>
-          <button 
-            onClick={onBack}
-            className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-medium transition-colors"
-          >
-            Voltar
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // 3. Painel Completo do Super Admin
+  // Painel Completo (Liberado para qualquer usuário autenticado no Firebase)
   return (
     <div className="max-w-6xl mx-auto p-6 space-y-6 text-gray-100">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-gray-800 pb-4">
@@ -151,7 +123,7 @@ export default function SuperAdminScreen({ onBack }: SuperAdminScreenProps) {
             <h1 className="text-2xl font-bold text-white flex items-center gap-2">
               <Settings className="w-6 h-6 text-indigo-500" /> Painel Super Admin
             </h1>
-            <p className="text-sm text-gray-400">Logado como: <span className="text-indigo-400">{currentUser.email}</span></p>
+            <p className="text-sm text-gray-400">Conectado via Firebase Auth como: <span className="text-indigo-400">{currentUser.email}</span></p>
           </div>
         </div>
 
