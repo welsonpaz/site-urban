@@ -7,14 +7,12 @@ export default function App() {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   
-  // Estados para a tela de login caso ela seja controlada aqui
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loginError, setLoginError] = useState('');
   const [loggingIn, setLoggingIn] = useState(false);
 
   useEffect(() => {
-    // Fica escutando se o usuário está logado ou não no Firebase Auth
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       setLoading(false);
@@ -28,8 +26,10 @@ export default function App() {
     setLoggingIn(true);
     
     const result = await signInWithEmail(email, password);
-    if (!result.success) {
-      setLoginError(result.error || 'Erro ao fazer login.');
+    if (result.success && result.user) {
+      setUser(result.user);
+    } else {
+      setLoginError(result.error || 'E-mail ou senha incorretos.');
     }
     setLoggingIn(false);
   };
@@ -42,14 +42,14 @@ export default function App() {
     );
   }
 
-  // Se NÃO estiver logado, exibe a tela de login protegida por e-mail e senha
+  // Se não estiver logado, exibe a tela de login
   if (!user) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
         <div className="bg-slate-900 border border-slate-800 p-8 rounded-2xl shadow-xl max-w-md w-full text-white">
           <div className="text-center mb-6">
-            <h1 className="text-2xl font-bold">Acesso Restrito</h1>
-            <p className="text-sm text-slate-400 mt-1">Entre com seu e-mail e senha para gerenciar o sistema</p>
+            <h1 className="text-2xl font-bold">Painel Super Admin</h1>
+            <p className="text-sm text-slate-400 mt-1">Entre com suas credenciais para continuar</p>
           </div>
 
           {loginError && (
@@ -88,7 +88,7 @@ export default function App() {
               disabled={loggingIn}
               className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 font-semibold rounded-lg transition duration-200 disabled:opacity-50 mt-2"
             >
-              {loggingIn ? 'Entrando...' : 'Entrar no Sistema'}
+              {loggingIn ? 'Entrando...' : 'Entrar'}
             </button>
           </form>
         </div>
@@ -96,7 +96,7 @@ export default function App() {
     );
   }
 
-  // Se estiver logado, exibe o painel do Super Admin com o botão de Sair no topo
+  // Se estiver logado, exibe o painel do Super Admin com o botão de Sair
   return (
     <div className="min-h-screen bg-slate-950 text-white">
       <header className="bg-slate-900 border-b border-slate-800 px-6 py-4 flex justify-between items-center shadow-md">
@@ -107,7 +107,7 @@ export default function App() {
           onClick={() => signOut(auth)}
           className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition shadow"
         >
-          Sair (Logout)
+          Sair
         </button>
       </header>
 
