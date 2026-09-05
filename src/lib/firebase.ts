@@ -3,14 +3,14 @@ import { getAuth, signInWithEmailAndPassword as fbSignIn } from 'firebase/auth';
 import { getFirestore, collection, getDocs, addDoc, deleteDoc, doc, query, where, setDoc } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 
-// ⚠️ Mantenha aqui as chaves de configuração do seu projeto Firebase correto
+// Configuração segura utilizando as variáveis do arquivo .env
 const firebaseConfig = {
-  apiKey: "SUA_API_KEY",
-  authDomain: "SEU_AUTH_DOMAIN",
-  projectId: "SEU_PROJECT_ID",
-  storageBucket: "SEU_STORAGE_BUCKET",
-  messagingSenderId: "SEU_MESSAGING_SENDER_ID",
-  appId: "SEU_APP_ID"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID
 };
 
 const app = initializeApp(firebaseConfig);
@@ -36,7 +36,7 @@ export function handleFirestoreError(error: any, customMessage: string = 'Erro n
   return null;
 }
 
-// Função auxiliar customizada de Login para lidar melhor com erros de Autenticação
+// Função robusta de Login
 export async function signInWithEmail(email: string, pass: string) {
   try {
     const userCredential = await fbSignIn(auth, email, pass);
@@ -44,13 +44,17 @@ export async function signInWithEmail(email: string, pass: string) {
   } catch (error: any) {
     console.error('Erro no Firebase Auth:', error.code, error.message);
     let message = 'E-mail ou senha incorretos no Firebase Auth.';
-    if (error.code === 'auth/user-not-found') {
-      message = 'Usuário não encontrado.';
+    
+    if (error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential') {
+      message = 'E-mail ou senha inválidos. Verifique os dados informados.';
     } else if (error.code === 'auth/wrong-password') {
       message = 'Senha incorreta.';
     } else if (error.code === 'auth/invalid-email') {
-      message = 'E-mail inválido.';
+      message = 'E-mail com formato inválido.';
+    } else if (error.code === 'auth/too-many-requests') {
+      message = 'Muitas tentativas falhas. Acesso temporariamente bloqueado.';
     }
+    
     return { success: false, error: message };
   }
 }
