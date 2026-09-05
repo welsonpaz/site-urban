@@ -3,7 +3,7 @@ import { db, storage } from '../lib/firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
-export function SuperAdminScreen() {
+export default function SuperAdminScreen() {
   const [restaurantName, setRestaurantName] = useState('');
   const [address, setAddress] = useState('');
   const [openingHours, setOpeningHours] = useState('');
