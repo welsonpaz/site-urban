@@ -36,7 +36,7 @@ export function handleFirestoreError(error: any, customMessage: string = 'Erro n
   return null;
 }
 
-// Função robusta de Login
+// Função robusta de Login por E-mail e Senha
 export async function signInWithEmail(email: string, pass: string) {
   try {
     const userCredential = await fbSignIn(auth, email, pass);
