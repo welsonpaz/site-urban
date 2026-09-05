@@ -1,9 +1,9 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
-import { getFirestore, collection, getDocs, addDoc, deleteDoc, doc, query, where, setDoc, getDoc } from 'firebase/firestore';
+import { getAuth, signInWithEmailAndPassword as fbSignIn } from 'firebase/auth';
+import { getFirestore, collection, getDocs, addDoc, deleteDoc, doc, query, where, setDoc } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 
-// ⚠️ Mantenha aqui as chaves de configuração do seu projeto Firebase
+// ⚠️ Mantenha aqui as chaves de configuração do seu projeto Firebase correto
 const firebaseConfig = {
   apiKey: "SUA_API_KEY",
   authDomain: "SEU_AUTH_DOMAIN",
@@ -19,7 +19,7 @@ export const auth = getAuth(app);
 export const db = getFirestore(app);
 export const storage = getStorage(app);
 
-// Utilitários auxiliares exigidos por serviços do projeto
+// Utilitários de dados e tratamento de erros
 export function cleanData(data: any) {
   if (!data) return data;
   const cleaned = { ...data };
@@ -31,9 +31,28 @@ export function cleanData(data: any) {
   return cleaned;
 }
 
-export function handleFirestoreError(error: any, customMessage: string = 'Erro no Firestore') {
+export function handleFirestoreError(error: any, customMessage: string = 'Erro na operação') {
   console.error(`${customMessage}:`, error);
   return null;
+}
+
+// Função auxiliar customizada de Login para lidar melhor com erros de Autenticação
+export async function signInWithEmail(email: string, pass: string) {
+  try {
+    const userCredential = await fbSignIn(auth, email, pass);
+    return { success: true, user: userCredential.user };
+  } catch (error: any) {
+    console.error('Erro no Firebase Auth:', error.code, error.message);
+    let message = 'E-mail ou senha incorretos no Firebase Auth.';
+    if (error.code === 'auth/user-not-found') {
+      message = 'Usuário não encontrado.';
+    } else if (error.code === 'auth/wrong-password') {
+      message = 'Senha incorreta.';
+    } else if (error.code === 'auth/invalid-email') {
+      message = 'E-mail inválido.';
+    }
+    return { success: false, error: message };
+  }
 }
 
 // Funções utilitárias de Produtos
