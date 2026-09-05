@@ -1,0 +1,6 @@
+{
+  "name": "ZestCuisine",
+  "description": "Cardápio digital exclusivo para hamburgueria artesanal com pedidos online, acompanhamento em tempo real e painel administrativo.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
